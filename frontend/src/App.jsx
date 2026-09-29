@@ -43,7 +43,13 @@ export default function App() {
               <p className="text-xs text-slate-400">Codebase Intelligence Platform</p>
             </div>
           </div>
-          <span className={\inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border \\}>
+          <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${
+            loading
+              ? 'bg-slate-800 text-slate-300 border-slate-700'
+              : connected
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                : 'bg-red-500/10 text-red-400 border-red-500/30'
+          }`}>
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : connected ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
             {loading ? 'Checking...' : connected ? 'Backend Connected' : 'Backend Disconnected'}
           </span>
