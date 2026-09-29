@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+ai_software_engineer.db
+*.db
+
+# Python test / coverage output
+.pytest_cache/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/node_modules/
+dist/
+dist-ssr/
+frontend/dist/
+frontend/.vite/
+*.local
+
+# Env (never commit real environment files)
+.env
+.env.*
+backend/.env
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads / data (runtime storage; only the placeholder is tracked)
+data/**
+!data/.gitkeep
+chroma_db/
