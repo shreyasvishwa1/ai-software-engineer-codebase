@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 from datetime import datetime, timezone
 from app.config import get_settings
 

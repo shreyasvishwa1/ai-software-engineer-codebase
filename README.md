@@ -1,4 +1,4 @@
-﻿# AI Software Engineer — Codebase Intelligence Platform
+# AI Software Engineer — Codebase Intelligence Platform
 
 Production-quality AI-powered developer platform to understand, analyze and explain software repositories.
 
@@ -14,22 +14,22 @@ Production-quality AI-powered developer platform to understand, analyze and expl
 ## Quick Start
 
 ### Backend
-\\\powershell
+```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-\\\
+```
 - Health: http://127.0.0.1:8000/health
 - Docs: http://127.0.0.1:8000/docs
 
 ### Frontend
-\\\powershell
+```powershell
 cd frontend
 npm install
 npm run dev
-\\\
+```
 - App: http://localhost:5173
 
 ## Project Structure

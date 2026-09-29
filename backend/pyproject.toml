@@ -1,0 +1,25 @@
+[project]
+name = "ai-software-engineer-backend"
+version = "1.0.0"
+description = "AI Software Engineer - Codebase Intelligence Platform (backend API)"
+readme = "../README.md"
+requires-python = ">=3.12,<3.13"
+
+# Runtime dependencies are pinned in requirements.txt (the source of truth for installs).
+# Development tools are pinned in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+ignore_missing_imports = true
