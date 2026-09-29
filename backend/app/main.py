@@ -2,6 +2,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from app.api.v1.router import api_router as api_v1_router
 from app.config import get_settings
 from app.routes.health import router as health_router
 
@@ -46,6 +47,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Routers
+app.include_router(api_v1_router, prefix=settings.api_prefix)
+# Unversioned /health and /api/health, kept for backward compatibility (used by the frontend).
 app.include_router(health_router)
 
 @app.get("/")
