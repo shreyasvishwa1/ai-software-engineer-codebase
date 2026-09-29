@@ -19,6 +19,10 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 MIN_SECRET_KEY_LENGTH = 32
 
+# JWTs are signed with SECRET_KEY, a shared secret, so only HMAC algorithms apply.
+# An explicit allow-list also rules out "none" (unsigned tokens).
+SUPPORTED_JWT_ALGORITHMS = frozenset({"HS256", "HS384", "HS512"})
+
 # Publicly known placeholder values (e.g. from .env.example). Acceptable for local
 # development only; rejected when ENVIRONMENT=production.
 INSECURE_SECRET_KEYS = frozenset({"dev-secret-key-change-in-production"})
@@ -53,6 +57,10 @@ class Settings(BaseSettings):
     secret_key: SecretStr
     max_upload_size_mb: int = Field(default=100, ge=1, le=1024)
 
+    # JWT access tokens (signed with SECRET_KEY)
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = Field(default=60, gt=0)
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -85,6 +93,13 @@ class Settings(BaseSettings):
     def _validate_secret_key(cls, value: SecretStr) -> SecretStr:
         if len(value.get_secret_value()) < MIN_SECRET_KEY_LENGTH:
             raise ValueError(f"must be at least {MIN_SECRET_KEY_LENGTH} characters long")
+        return value
+
+    @field_validator("jwt_algorithm")
+    @classmethod
+    def _validate_jwt_algorithm(cls, value: str) -> str:
+        if value not in SUPPORTED_JWT_ALGORITHMS:
+            raise ValueError(f"must be one of {', '.join(sorted(SUPPORTED_JWT_ALGORITHMS))}")
         return value
 
     @model_validator(mode="after")
