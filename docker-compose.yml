@@ -1,0 +1,30 @@
+# Local development only. Not a production deployment.
+#
+# Credentials are never stored in this file. Docker Compose reads POSTGRES_USER,
+# POSTGRES_PASSWORD and POSTGRES_DB from the shell or from the repository-root .env
+# (see .env.example), and refuses to start if any of them is missing.
+#
+#   docker compose up -d postgres
+
+name: ai-software-engineer
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER (see .env.example)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB (see .env.example)}
+    ports:
+      # Bound to localhost only; never exposed on the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
