@@ -1,6 +1,7 @@
-"""Synchronous ZIP ingestion for a repository.
+"""Synchronous ZIP ingestion for a repository (uploaded ZIP or public GitHub archive).
 
-Lifecycle (Repository.status): claim ``processing`` -> extract into a staging directory ->
+Lifecycle (Repository.status): claim ``processing`` -> obtain the archive (the upload, or a
+GitHub download) -> extract into a staging directory ->
 replace the repository's File rows and set ``ready`` in one transaction -> swap the staging
 directory into DATA_DIR/repositories/<repository_id>/. Any failure rolls the database
 work back, marks the repository ``failed`` and removes the staging directory, so the
@@ -9,7 +10,9 @@ previous File rows and stored files are preserved.
 
 import os
 import shutil
+import tempfile
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import IO
 
@@ -20,6 +23,15 @@ from starlette.concurrency import run_in_threadpool
 from app.config import Settings, get_settings
 from app.models import File, Repository, RepositoryStatus
 from app.services.archive import MIB, ArchiveError, ArchiveLimits, extract_zip
+from app.services.github import (
+    GitHubError,
+    archive_download_url,
+    download_archive,
+    parse_github_repository_url,
+)
+
+# Returns the archive to ingest; called after the repository has been claimed.
+ArchiveProvider = Callable[[], Awaitable[IO[bytes]]]
 
 
 class IngestionError(Exception):
@@ -89,7 +101,41 @@ async def _mark_failed(db: AsyncSession, repository_id: uuid.UUID) -> None:
 async def ingest_zip_archive(
     db: AsyncSession, repository: Repository, archive: IO[bytes]
 ) -> int:
-    """Ingest ``archive`` into ``repository`` and return the number of registered files."""
+    """Ingest an uploaded ZIP ``archive`` and return the number of registered files."""
+
+    async def provide_upload() -> IO[bytes]:
+        return archive
+
+    return await _ingest(db, repository, provide_upload)
+
+
+async def ingest_github_repository(db: AsyncSession, repository: Repository) -> int:
+    """Download the public GitHub archive for ``repository.source_url`` and ingest it.
+
+    The URL and branch are validated before the repository is claimed, so invalid sources
+    leave the status unchanged. The download goes to an anonymous temporary file that is
+    deleted when closed, and then through exactly the same pipeline as an uploaded ZIP.
+    """
+    try:
+        source = parse_github_repository_url(repository.source_url)
+        url = archive_download_url(source, repository.default_branch)
+    except GitHubError as exc:
+        raise IngestionError(exc.status_code, exc.detail) from None
+    max_bytes = get_settings().max_upload_size_mb * MIB
+
+    with tempfile.TemporaryFile() as download:
+
+        async def provide_download() -> IO[bytes]:
+            await download_archive(url, download, max_bytes)
+            return download
+
+        return await _ingest(db, repository, provide_download)
+
+
+async def _ingest(
+    db: AsyncSession, repository: Repository, provide_archive: ArchiveProvider
+) -> int:
+    """Run the ingestion lifecycle on the archive returned by ``provide_archive``."""
     settings = get_settings()
     repository_id = repository.id
 
@@ -106,10 +152,11 @@ async def ingest_zip_archive(
 
     staging: Path | None = None
     try:
-        staging = await run_in_threadpool(_new_staging_dir, settings, repository_id)
         try:
+            archive = await provide_archive()
+            staging = await run_in_threadpool(_new_staging_dir, settings, repository_id)
             files = await run_in_threadpool(extract_zip, archive, staging, archive_limits(settings))
-        except ArchiveError as exc:
+        except (ArchiveError, GitHubError) as exc:
             raise IngestionError(exc.status_code, exc.detail) from None
 
         await db.execute(delete(File).where(File.repository_id == repository_id))

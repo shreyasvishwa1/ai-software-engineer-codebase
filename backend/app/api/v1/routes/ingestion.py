@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models import RepositorySourceType, RepositoryStatus, User
 from app.schemas.ingestion import IngestionResponse
 from app.services.archive import MIB
-from app.services.ingestion import IngestionError, ingest_zip_archive
+from app.services.ingestion import IngestionError, ingest_github_repository, ingest_zip_archive
 
 # Every route requires an authenticated user.
 router = APIRouter(
@@ -29,10 +29,16 @@ UPLOAD_FIELD = "file"
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
 
 # The body is parsed manually (after authentication and ownership checks), so it is
-# documented here instead of through an UploadFile parameter.
+# documented here instead of through an UploadFile parameter. It is required only for
+# source_type=zip; GitHub repositories are downloaded from their validated source_url.
 _OPENAPI_REQUEST_BODY: dict[str, Any] = {
+    "description": (
+        "source_type=zip: upload the ZIP archive in the 'file' field. "
+        "source_type=github: send no body; the public archive for the repository's "
+        "source_url (https://github.com/<owner>/<repository>) is downloaded."
+    ),
     "requestBody": {
-        "required": True,
+        "required": False,
         "content": {
             "multipart/form-data": {
                 "schema": {
@@ -67,7 +73,14 @@ async def ingest_repository(
     # Ownership and source checks happen before any of the request body is read.
     repository = await _get_owned_repository(db, project_id, repository_id, user)
     if repository.source_type == RepositorySourceType.GITHUB:
-        raise _error(status.HTTP_409_CONFLICT, "GitHub ingestion is not implemented")
+        # The archive comes from the repository's validated source_url; no body is read.
+        try:
+            file_count = await ingest_github_repository(db, repository)
+        except IngestionError as exc:
+            raise _error(exc.status_code, exc.detail) from None
+        return IngestionResponse(
+            repository_id=repository_id, status=RepositoryStatus.READY, file_count=file_count
+        )
 
     max_upload_bytes = get_settings().max_upload_size_mb * MIB
     content_length = request.headers.get("content-length")

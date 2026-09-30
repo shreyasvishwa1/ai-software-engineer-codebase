@@ -508,13 +508,14 @@ async def test_github_repository_is_rejected_without_network(
 ) -> None:
     github = await client.post(
         f"/api/v1/projects/{alice.project_id}/repositories",
-        json={"name": "gh", "source_type": "github", "source_url": "https://github.com/a/b"},
+        json={"name": "gh", "source_type": "github", "source_url": "https://evil.example/a/b"},
         headers=alice.headers,
     )
     repository_id = github.json()["id"]
+    # A GitHub repository never falls back to the uploaded ZIP; its URL is validated first.
     response = await _ingest(client, alice, _zip(SAMPLE), repository_id=repository_id)
-    assert response.status_code == 409
-    assert response.json() == {"detail": "GitHub ingestion is not implemented"}
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Invalid GitHub repository URL"}
     assert await _status(db_session, repository_id) == RepositoryStatus.PENDING
 
 
