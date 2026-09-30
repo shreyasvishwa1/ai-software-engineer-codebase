@@ -4,7 +4,10 @@
 # POSTGRES_PASSWORD and POSTGRES_DB from the shell or from the repository-root .env
 # (see .env.example), and refuses to start if any of them is missing.
 #
-#   docker compose up -d postgres
+#   docker compose up -d postgres redis
+#
+# The ingestion worker is started explicitly (not a compose service), from backend/:
+#   arq app.workers.worker.WorkerSettings
 
 name: ai-software-engineer
 
@@ -22,6 +25,19 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # Development queue only: no persistence (no RDB snapshots, no AOF, no volume).
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      # Bound to localhost only; never exposed on the network.
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10

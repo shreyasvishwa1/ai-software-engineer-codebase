@@ -43,6 +43,7 @@ from app.services import github as github_service
 from app.services import ingestion as ingestion_service
 from app.services.analysis_jobs import new_ingestion_job
 from tests.test_repository_ingestion import _zip, _zip_raw_names
+from tests.test_worker import install_inline_worker
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 TEST_MIGRATION_DATABASE_URL = os.environ.get("TEST_MIGRATION_DATABASE_URL")
@@ -306,10 +307,14 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession, data_dir: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    db_session: AsyncSession, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[httpx.AsyncClient]:
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db_session
 
+    # Queued jobs run immediately with the real worker logic (ingestion is asynchronous).
+    install_inline_worker(monkeypatch, db_session)
     app.dependency_overrides[get_db] = override_get_db
     try:
         transport = httpx.ASGITransport(app=app)
@@ -447,7 +452,7 @@ async def test_successful_zip_ingestion_records_completed_job(
 ) -> None:
     assert (await _jobs(client, alice)) == []
     response = await _ingest_zip(client, alice, _zip(SAMPLE))
-    assert response.status_code == 200
+    assert response.status_code == 202
 
     jobs = await _jobs(client, alice)
     assert len(jobs) == 1
@@ -490,7 +495,7 @@ async def test_successful_github_ingestion_records_completed_job(
         f"/api/v1/projects/{alice.project_id}/repositories/{repository_id}/ingest",
         headers=alice.headers,
     )
-    assert response.status_code == 200
+    assert response.status_code == 202
     jobs = await _jobs(client, alice, repository_id)
     assert [(j["job_type"], j["status"], j["progress"]) for j in jobs] == [
         ("ingestion", "completed", 100)
@@ -501,10 +506,10 @@ async def test_successful_github_ingestion_records_completed_job(
 
 @requires_db
 @pytest.mark.parametrize(
-    ("archive", "expected_status", "error_message"),
+    ("archive", "error_message"),
     [
-        (b"PK\x03\x04 not really a zip", 400, "Invalid ZIP archive"),
-        (_zip_raw_names(["ok.txt", "../../evil.txt"]), 400, "Archive contains an unsafe path"),
+        (b"PK\x03\x04 not really a zip", "Invalid ZIP archive"),
+        (_zip_raw_names(["ok.txt", "../../evil.txt"]), "Archive contains an unsafe path"),
     ],
 )
 async def test_failed_zip_ingestion_records_failed_job(
@@ -512,11 +517,10 @@ async def test_failed_zip_ingestion_records_failed_job(
     db_session: AsyncSession,
     alice: Owner,
     archive: bytes,
-    expected_status: int,
     error_message: str,
 ) -> None:
     response = await _ingest_zip(client, alice, archive)
-    assert response.status_code == expected_status
+    assert response.status_code == 202
     jobs = await _jobs(client, alice)
     assert len(jobs) == 1
     _assert_failed_job(jobs[0], alice, error_message)
@@ -541,7 +545,7 @@ async def test_github_download_failure_records_failed_job(
         f"/api/v1/projects/{alice.project_id}/repositories/{repository_id}/ingest",
         headers=alice.headers,
     )
-    assert response.status_code == 404
+    assert response.status_code == 202
     jobs = await _jobs(client, alice, repository_id)
     owner = Owner(alice.headers, alice.project_id, repository_id)
     _assert_failed_job(jobs[0], owner, "GitHub repository not found")
@@ -559,21 +563,8 @@ async def test_unexpected_failure_records_generic_error(
         raise RuntimeError("SECRET internal detail /srv/data")
 
     monkeypatch.setattr(ingestion_service, "mark_completed", exploding_mark_completed)
-    # Starlette re-raises unhandled errors after sending the 500; a real server logs them.
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as server:
-        response = await server.post(
-            f"/api/v1/projects/{alice.project_id}/repositories/{alice.repository_id}/ingest",
-            files={"file": ("repo.zip", _zip(SAMPLE), "application/zip")},
-            headers=alice.headers,
-        )
-    assert response.status_code == 500
-    assert response.json() == {
-        "error": {
-            "code": "INTERNAL_SERVER_ERROR",
-            "message": "An unexpected error occurred. Please try again later.",
-        }
-    }
+    response = await _ingest_zip(client, alice, _zip(SAMPLE))
+    assert response.status_code == 202  # the worker never raises; the job records it
     assert "SECRET" not in response.text
     jobs = await _jobs(client, alice)
     _assert_failed_job(jobs[0], alice, "Ingestion failed due to an internal error")
@@ -589,7 +580,7 @@ async def test_storage_failure_records_failed_job(
 
     monkeypatch.setattr(ingestion_service, "swap_into_place", failing_swap)
     response = await _ingest_zip(client, alice, _zip(SAMPLE))
-    assert response.status_code == 500
+    assert response.status_code == 202
     jobs = await _jobs(client, alice)
     assert len(jobs) == 1
     assert jobs[0]["status"] == "failed"  # not left completed
@@ -624,7 +615,7 @@ async def test_requests_rejected_before_ingestion_create_no_job(
 async def test_cross_user_job_access_is_not_found(
     client: httpx.AsyncClient, alice: Owner, bob: Owner
 ) -> None:
-    assert (await _ingest_zip(client, bob, _zip(SAMPLE))).status_code == 200
+    assert (await _ingest_zip(client, bob, _zip(SAMPLE))).status_code == 202
     bob_job = (await _jobs(client, bob))[0]["id"]
 
     for project_id, repository_id in (
@@ -654,7 +645,7 @@ async def test_job_through_wrong_project_or_repository_is_not_found(
 ) -> None:
     sibling = await _repository(client, alice.headers, alice.project_id, name="sibling")
     other_project = await _project(client, alice.headers, "Other")
-    assert (await _ingest_zip(client, alice, _zip(SAMPLE))).status_code == 200
+    assert (await _ingest_zip(client, alice, _zip(SAMPLE))).status_code == 202
     job_id = (await _jobs(client, alice))[0]["id"]
 
     for project_id, repository_id in (
@@ -699,9 +690,9 @@ async def test_nonexistent_resources_and_invalid_ids(
 async def test_list_multiple_jobs_newest_first(
     client: httpx.AsyncClient, db_session: AsyncSession, alice: Owner
 ) -> None:
-    assert (await _ingest_zip(client, alice, _zip(SAMPLE))).status_code == 200
-    assert (await _ingest_zip(client, alice, b"not a zip")).status_code == 400
-    assert (await _ingest_zip(client, alice, _zip({"b.txt": b"b"}))).status_code == 200
+    assert (await _ingest_zip(client, alice, _zip(SAMPLE))).status_code == 202
+    assert (await _ingest_zip(client, alice, b"not a zip")).status_code == 202
+    assert (await _ingest_zip(client, alice, _zip({"b.txt": b"b"}))).status_code == 202
     jobs = await _jobs(client, alice)
     assert sorted(j["status"] for j in jobs) == ["completed", "completed", "failed"]
 
@@ -750,8 +741,8 @@ async def test_deleting_repository_or_project_removes_jobs(
     client: httpx.AsyncClient, db_session: AsyncSession, alice: Owner
 ) -> None:
     second = await _repository(client, alice.headers, alice.project_id, name="second")
-    assert (await _ingest_zip(client, alice, _zip(SAMPLE))).status_code == 200
-    assert (await _ingest_zip(client, alice, _zip(SAMPLE), repository_id=second)).status_code == 200
+    assert (await _ingest_zip(client, alice, _zip(SAMPLE))).status_code == 202
+    assert (await _ingest_zip(client, alice, _zip(SAMPLE), repository_id=second)).status_code == 202
     assert await _job_count(db_session, project_id=alice.project_id) == 2
 
     deleted = await client.delete(

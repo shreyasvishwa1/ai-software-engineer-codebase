@@ -10,6 +10,7 @@ Real environment variables take precedence over values in ``backend/.env``.
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,6 +71,9 @@ class Settings(BaseSettings):
     max_extracted_file_size_mb: int = Field(default=25, ge=1, le=102_400)
     max_compression_ratio: int = Field(default=100, ge=1, le=10_000)
 
+    # Background job queue (arq). Treated as a secret because the URL can embed a password.
+    redis_url: SecretStr = SecretStr("redis://localhost:6379/0")
+
     # Local storage for extracted repositories: DATA_DIR/repositories/<repository_id>/.
     # Relative paths are resolved against the repository root, not the working directory.
     data_dir: Path = REPO_ROOT / "data"
@@ -113,6 +117,26 @@ class Settings(BaseSettings):
     def _validate_jwt_algorithm(cls, value: str) -> str:
         if value not in SUPPORTED_JWT_ALGORITHMS:
             raise ValueError(f"must be one of {', '.join(sorted(SUPPORTED_JWT_ALGORITHMS))}")
+        return value
+
+    @field_validator("redis_url")
+    @classmethod
+    def _validate_redis_url(cls, value: SecretStr) -> SecretStr:
+        # Messages never include the URL itself.
+        try:
+            parts = urlsplit(value.get_secret_value())
+            port = parts.port
+        except ValueError:
+            raise ValueError("must be a valid redis:// or rediss:// URL") from None
+        database = parts.path.lstrip("/")
+        if (
+            parts.scheme not in ("redis", "rediss")
+            or not parts.hostname
+            or (port is not None and not 0 < port < 65536)
+            or (database and not database.isdigit())
+            or parts.fragment
+        ):
+            raise ValueError("must be redis://[user:password@]host[:port][/db] (or rediss://)")
         return value
 
     @field_validator("data_dir")

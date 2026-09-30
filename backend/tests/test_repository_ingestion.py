@@ -29,9 +29,10 @@ from sqlalchemy.pool import NullPool
 from app.config import REPO_ROOT, Settings, get_settings
 from app.database import get_db
 from app.main import app
-from app.models import File, Repository, RepositoryStatus
+from app.models import AnalysisJob, AnalysisJobStatus, File, Repository, RepositoryStatus
 from app.services import ingestion as ingestion_service
 from app.services.archive import ArchiveError, ArchiveLimits, extract_zip, normalize_member_path
+from tests.test_worker import install_inline_worker
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 requires_db = pytest.mark.skipif(
@@ -346,10 +347,14 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession, data_dir: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    db_session: AsyncSession, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[httpx.AsyncClient]:
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db_session
 
+    # Queued jobs run immediately with the real worker logic (ingestion is asynchronous).
+    install_inline_worker(monkeypatch, db_session)
     app.dependency_overrides[get_db] = override_get_db
     try:
         transport = httpx.ASGITransport(app=app)
@@ -431,8 +436,33 @@ def _storage(data_dir: Path, repository_id: str) -> Path:
 
 
 def _leftovers(data_dir: Path) -> list[str]:
+    """Staging/old directories and queued uploads that should not remain."""
     root = data_dir / "repositories"
-    return sorted(p.name for p in root.iterdir() if p.name.startswith(".")) if root.exists() else []
+    uploads = data_dir / "ingestion-uploads"
+    found = [p.name for p in root.iterdir() if p.name.startswith(".")] if root.exists() else []
+    found += [p.name for p in uploads.iterdir()] if uploads.exists() else []
+    return sorted(found)
+
+
+async def _job_error(db: AsyncSession, repository_id: str) -> str | None:
+    """The latest ingestion job's error (asserting it failed)."""
+    db.expire_all()
+    job = await db.scalar(
+        select(AnalysisJob)
+        .where(AnalysisJob.repository_id == uuid.UUID(repository_id))
+        .order_by(AnalysisJob.created_at.desc(), AnalysisJob.completed_at.desc())
+        .limit(1)
+    )
+    assert job is not None
+    assert job.status == AnalysisJobStatus.FAILED
+    return job.error_message
+
+
+def _assert_accepted(response: httpx.Response, repository_id: str) -> None:
+    assert response.status_code == 202
+    body = response.json()
+    assert set(body) == {"job_id", "repository_id", "status"}
+    assert (body["repository_id"], body["status"]) == (repository_id, "pending")
 
 
 SAMPLE = {
@@ -543,12 +573,7 @@ async def test_valid_zip_ingestion_registers_files(
     client: httpx.AsyncClient, db_session: AsyncSession, data_dir: Path, alice: Owner
 ) -> None:
     response = await _ingest(client, alice, _zip({**SAMPLE, "src/": b""}))
-    assert response.status_code == 200
-    assert response.json() == {
-        "repository_id": alice.repository_id,
-        "status": "ready",
-        "file_count": 3,
-    }
+    _assert_accepted(response, alice.repository_id)
 
     rows = await _file_rows(db_session, alice.repository_id)
     assert set(rows) == set(SAMPLE)  # directories are not registered
@@ -581,8 +606,7 @@ async def test_empty_zip_is_ingested_with_no_files(
     client: httpx.AsyncClient, db_session: AsyncSession, data_dir: Path, alice: Owner
 ) -> None:
     response = await _ingest(client, alice, _zip({}))
-    assert response.status_code == 200
-    assert response.json()["file_count"] == 0
+    _assert_accepted(response, alice.repository_id)
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.READY
     assert await _file_rows(db_session, alice.repository_id) == {}
     assert _files_under(_storage(data_dir, alice.repository_id)) == set()
@@ -603,7 +627,7 @@ async def test_ingestion_does_not_execute_uploaded_code(
         "sitecustomize.py": payload,
     }
     response = await _ingest(client, alice, _zip(archive))
-    assert response.status_code == 200
+    _assert_accepted(response, alice.repository_id)
     assert not marker.exists()
     assert "evil_module_x1" not in sys.modules
     storage = _storage(data_dir, alice.repository_id)
@@ -615,10 +639,10 @@ async def test_reingestion_replaces_files_atomically(
     client: httpx.AsyncClient, db_session: AsyncSession, data_dir: Path, alice: Owner
 ) -> None:
     first = await _ingest(client, alice, _zip({"a.txt": b"a", "b.txt": b"old"}))
-    assert first.json()["file_count"] == 2
+    _assert_accepted(first, alice.repository_id)
+    assert set(await _file_rows(db_session, alice.repository_id)) == {"a.txt", "b.txt"}
     second = await _ingest(client, alice, _zip({"b.txt": b"new", "c/d.txt": b"d"}))
-    assert second.status_code == 200
-    assert second.json()["file_count"] == 2
+    _assert_accepted(second, alice.repository_id)
 
     rows = await _file_rows(db_session, alice.repository_id)
     assert set(rows) == {"b.txt", "c/d.txt"}
@@ -683,17 +707,22 @@ async def test_concurrent_ingestion_is_rejected(
 
 # --- API: failed ingestion ---------------------------------------------------------------
 
+UNSAFE_PATH = "Archive contains an unsafe path"
+# Archive problems are found by the worker: the request is accepted (202) and the job fails.
 FAILING_ARCHIVES = {
-    "malformed": (b"PK\x03\x04 definitely not a zip", 400),
-    "traversal": (_zip_raw_names(["ok.txt", "../../evil.txt"]), 400),
-    "nested traversal": (_zip_raw_names(["ok.txt", "src/../../evil.txt"]), 400),
-    "absolute unix": (_zip_raw_names(["ok.txt", "/tmp/evil.txt"]), 400),
-    "windows drive slash": (_zip_raw_names(["ok.txt", "C:/evil.txt"]), 400),
-    "windows drive backslash": (_zip_raw_names(["ok.txt", "C:\\evil.txt"]), 400),
-    "unc": (_zip_raw_names(["ok.txt", "\\\\server\\share\\evil.txt"]), 400),
-    "symlink": (_zip_symlink(), 400),
-    "duplicate": (_zip_raw_names(["ok.txt", "dup.txt", "dup.txt"]), 400),
-    "zip bomb": (_bomb(), 413),
+    "malformed": (b"PK\x03\x04 definitely not a zip", "Invalid ZIP archive"),
+    "traversal": (_zip_raw_names(["ok.txt", "../../evil.txt"]), UNSAFE_PATH),
+    "nested traversal": (_zip_raw_names(["ok.txt", "src/../../evil.txt"]), UNSAFE_PATH),
+    "absolute unix": (_zip_raw_names(["ok.txt", "/tmp/evil.txt"]), UNSAFE_PATH),
+    "windows drive slash": (_zip_raw_names(["ok.txt", "C:/evil.txt"]), UNSAFE_PATH),
+    "windows drive backslash": (_zip_raw_names(["ok.txt", "C:\\evil.txt"]), UNSAFE_PATH),
+    "unc": (_zip_raw_names(["ok.txt", "\\\\server\\share\\evil.txt"]), UNSAFE_PATH),
+    "symlink": (_zip_symlink(), "Archive contains a symbolic link"),
+    "duplicate": (
+        _zip_raw_names(["ok.txt", "dup.txt", "dup.txt"]),
+        "Archive contains duplicate or conflicting paths",
+    ),
+    "zip bomb": (_bomb(), "Archive entry exceeds the compression ratio limit"),
 }
 
 
@@ -707,11 +736,12 @@ async def test_failed_ingestion_is_controlled_and_leaves_no_trace(
     alice: Owner,
     case: str,
 ) -> None:
-    data, expected_status = FAILING_ARCHIVES[case]
+    data, detail = FAILING_ARCHIVES[case]
     response = await _ingest(client, alice, data)
-    assert response.status_code == expected_status
-    assert set(response.json()) == {"detail"}
-    assert str(tmp_path) not in response.text and "Traceback" not in response.text
+    _assert_accepted(response, alice.repository_id)
+    error = await _job_error(db_session, alice.repository_id)
+    assert error == detail
+    assert str(tmp_path) not in str(error) and "Traceback" not in str(error)
 
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
     assert await _file_rows(db_session, alice.repository_id) == {}
@@ -759,8 +789,8 @@ async def test_configured_limits_are_enforced(
     monkeypatch.setattr(get_settings(), setting, value)
     monkeypatch.setattr(get_settings(), "max_compression_ratio", 10_000)
     response = await _ingest(client, alice, _zip(archive, zipfile.ZIP_STORED))
-    assert response.status_code == 413
-    assert response.json() == {"detail": detail}
+    _assert_accepted(response, alice.repository_id)
+    assert await _job_error(db_session, alice.repository_id) == detail
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
     assert await _file_rows(db_session, alice.repository_id) == {}
     assert _leftovers(data_dir) == []
@@ -770,11 +800,12 @@ async def test_configured_limits_are_enforced(
 async def test_failed_reingestion_preserves_previous_files(
     client: httpx.AsyncClient, db_session: AsyncSession, data_dir: Path, alice: Owner
 ) -> None:
-    assert (await _ingest(client, alice, _zip(SAMPLE))).status_code == 200
+    assert (await _ingest(client, alice, _zip(SAMPLE))).status_code == 202
     before = {p: f.sha256 for p, f in (await _file_rows(db_session, alice.repository_id)).items()}
 
     response = await _ingest(client, alice, _zip_raw_names(["new.txt", "../../evil.txt"]))
-    assert response.status_code == 400
+    _assert_accepted(response, alice.repository_id)
+    assert await _job_error(db_session, alice.repository_id) == UNSAFE_PATH
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
     after = {p: f.sha256 for p, f in (await _file_rows(db_session, alice.repository_id)).items()}
     assert after == before  # no partial rows, previous rows intact
@@ -796,9 +827,10 @@ async def test_storage_swap_failure_is_controlled(
 
     monkeypatch.setattr(ingestion_service, "swap_into_place", failing_swap)
     response = await _ingest(client, alice, _zip(SAMPLE))
-    assert response.status_code == 500
-    assert response.json() == {"detail": "Repository storage could not be updated"}
-    assert str(tmp_path) not in response.text
+    _assert_accepted(response, alice.repository_id)
+    error = await _job_error(db_session, alice.repository_id)
+    assert error == "Repository storage could not be updated"
+    assert str(tmp_path) not in str(error)
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
     assert _leftovers(data_dir) == []
 
@@ -807,7 +839,7 @@ async def test_storage_swap_failure_is_controlled(
 async def test_storage_stays_inside_data_dir(
     client: httpx.AsyncClient, tmp_path: Path, data_dir: Path, alice: Owner
 ) -> None:
-    assert (await _ingest(client, alice, _zip(SAMPLE))).status_code == 200
+    assert (await _ingest(client, alice, _zip(SAMPLE))).status_code == 202
     storage_root = (data_dir / "repositories").resolve()
     for path in tmp_path.rglob("*"):
         if path.is_file():

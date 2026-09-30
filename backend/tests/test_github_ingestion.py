@@ -50,6 +50,7 @@ from tests.test_repository_ingestion import (
     _zip_raw_names,
     _zip_symlink,
 )
+from tests.test_worker import install_inline_worker
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 requires_db = pytest.mark.skipif(
@@ -401,10 +402,14 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession, data_dir: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    db_session: AsyncSession, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[httpx.AsyncClient]:
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db_session
 
+    # Queued jobs run immediately with the real worker logic (ingestion is asynchronous).
+    install_inline_worker(monkeypatch, db_session)
     app.dependency_overrides[get_db] = override_get_db
     try:
         transport = httpx.ASGITransport(app=app)
@@ -412,6 +417,22 @@ async def client(db_session: AsyncSession, data_dir: Path) -> AsyncIterator[http
             yield c
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+async def _job_error(
+    client: httpx.AsyncClient, owner: "Owner", response: httpx.Response
+) -> str | None:
+    """For a queued (202) ingestion whose worker run failed, return the job's error."""
+    assert response.status_code == 202, response.text
+    body = response.json()
+    job = await client.get(
+        f"/api/v1/projects/{owner.project_id}/repositories/{body['repository_id']}"
+        f"/jobs/{body['job_id']}",
+        headers=owner.headers,
+    )
+    assert job.status_code == 200
+    assert job.json()["status"] == "failed"
+    return job.json()["error_message"]
 
 
 @dataclass
@@ -540,12 +561,12 @@ async def test_successful_github_ingestion(
 ) -> None:
     _serve(github, _zip(ARCHIVE))
     response = await _ingest(client, alice)
-    assert response.status_code == 200
-    assert response.json() == {
-        "repository_id": alice.repository_id,
-        "status": "ready",
-        "file_count": 3,
-    }
+    assert response.status_code == 202
+    assert set(response.json()) == {"job_id", "repository_id", "status"}
+    assert (response.json()["repository_id"], response.json()["status"]) == (
+        alice.repository_id,
+        "pending",
+    )
 
     assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL, CODELOAD_URL]
     assert _requested_hosts(github) <= {"github.com", "codeload.github.com"}
@@ -577,7 +598,7 @@ async def test_default_branch_selects_archive_ref(
     branch_url = "https://github.com/octo/demo/archive/refs/heads/feature/new-ui.zip"
     github.get(pinned(branch_url)).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
     response = await _ingest(client, alice, repository_id=repository_id)
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert [_logical(c.request) for c in github.calls] == [branch_url]
 
 
@@ -591,7 +612,7 @@ async def test_github_ingestion_ignores_any_request_body(
         files={"file": ("other.zip", _zip({"injected.txt": b"x"}), "application/zip")},
         headers=alice.headers,
     )
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert set(await _rows(db_session, alice.repository_id)) == set(ARCHIVE)
 
 
@@ -607,8 +628,7 @@ async def test_zip_source_type_still_uses_upload(
         files={"file": ("repo.zip", _zip({"a.txt": b"a"}), "application/zip")},
         headers=alice.headers,
     )
-    assert response.status_code == 200
-    assert response.json()["file_count"] == 1
+    assert response.status_code == 202
     assert set(await _rows(db_session, zip_repository)) == {"a.txt"}
     missing = await client.post(_url(alice.project_id, zip_repository), headers=alice.headers)
     assert missing.status_code == 415  # ZIP repositories still require a multipart upload
@@ -621,10 +641,10 @@ async def test_successful_reingestion_replaces_files(
     github: respx.MockRouter,
 ) -> None:
     route = _serve(github, _zip({"demo-main/old.txt": b"old", "demo-main/keep.txt": b"1"}))
-    assert (await _ingest(client, alice)).status_code == 200
+    assert (await _ingest(client, alice)).status_code == 202
     route.mock(return_value=httpx.Response(200, content=_zip({"demo-main/keep.txt": b"2"})))
     response = await _ingest(client, alice)
-    assert response.status_code == 200
+    assert response.status_code == 202
     rows = await _rows(db_session, alice.repository_id)
     assert set(rows) == {"demo-main/keep.txt"}
     assert rows["demo-main/keep.txt"].sha256 == hashlib.sha256(b"2").hexdigest()
@@ -637,11 +657,11 @@ async def test_failed_reingestion_preserves_previous_files(
     github: respx.MockRouter,
 ) -> None:
     route = _serve(github, _zip(ARCHIVE))
-    assert (await _ingest(client, alice)).status_code == 200
+    assert (await _ingest(client, alice)).status_code == 202
     before = {p: f.sha256 for p, f in (await _rows(db_session, alice.repository_id)).items()}
     route.mock(return_value=httpx.Response(200, content=_zip_raw_names(["a", "../../evil"])))
     response = await _ingest(client, alice)
-    assert response.status_code == 400
+    assert await _job_error(client, alice, response) == "Archive contains an unsafe path"
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
     after = {p: f.sha256 for p, f in (await _rows(db_session, alice.repository_id)).items()}
     assert after == before
@@ -804,11 +824,10 @@ async def test_malicious_downloaded_archives_rejected(
     case: str,
 ) -> None:
     monkeypatch.setattr(get_settings(), "max_extracted_file_size_mb", 10)
-    body, expected_status, detail = MALICIOUS[case]
+    body, _, detail = MALICIOUS[case]
     _serve(github, body)
     response = await _ingest(client, alice)
-    assert response.status_code == expected_status
-    assert response.json() == {"detail": detail}
+    assert await _job_error(client, alice, response) == detail
     await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
     assert _files_under(tmp_path) == set()  # nothing written anywhere
 
@@ -853,8 +872,7 @@ async def test_archive_limits_apply_to_downloads(
     monkeypatch.setattr(get_settings(), "max_compression_ratio", 10_000)
     _serve(github, _zip(archive, zipfile.ZIP_STORED))
     response = await _ingest(client, alice)
-    assert response.status_code == 413
-    assert response.json() == {"detail": detail}
+    assert await _job_error(client, alice, response) == detail
     await _assert_failed_cleanly(db_session, data_dir, alice)
 
 
@@ -878,8 +896,7 @@ async def test_declared_oversized_content_length_rejected_before_body(
     stream = Stream([CHUNK] * 64)
     _serve(github, stream, **{"Content-Length": str(4 * MIB)})
     response = await _ingest(client, alice)
-    assert response.status_code == 413
-    assert response.json() == {"detail": "Downloaded archive exceeds the size limit"}
+    assert await _job_error(client, alice, response) == "Downloaded archive exceeds the size limit"
     assert stream.sent == 0  # body never consumed
     await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
 
@@ -898,7 +915,7 @@ async def test_stream_without_content_length_is_cut_off(
     stream = Stream([CHUNK] * 1600)  # 100 MiB if fully read
     _serve(github, stream)
     response = await _ingest(client, alice)
-    assert response.status_code == 413
+    assert await _job_error(client, alice, response) == "Downloaded archive exceeds the size limit"
     assert stream.sent <= 1 * MIB // len(CHUNK) + 1  # stopped right after the limit
     await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
 
@@ -915,7 +932,7 @@ async def test_accurate_but_oversized_response_rejected(
     monkeypatch.setattr(get_settings(), "max_upload_size_mb", 1)
     _serve(github, os.urandom(MIB + 1))
     response = await _ingest(client, alice)
-    assert response.status_code == 413
+    assert await _job_error(client, alice, response) == "Downloaded archive exceeds the size limit"
     await _assert_failed_cleanly(db_session, data_dir, alice)
 
 
@@ -932,7 +949,10 @@ async def test_understated_content_length_still_limited(
     stream = Stream([CHUNK] * 64)  # 4 MiB, while claiming 1 KiB
     _serve(github, stream, **{"Content-Length": "1024"})
     response = await _ingest(client, alice)
-    assert response.status_code in (413, 502)  # cut off by the limit or a framing error
+    assert await _job_error(client, alice, response) in (
+        "Downloaded archive exceeds the size limit",
+        "Could not connect to GitHub",  # framing error
+    )
     assert stream.sent <= 1 * MIB // len(CHUNK) + 1
     await _assert_failed_cleanly(db_session, data_dir, alice)
 
@@ -942,15 +962,15 @@ async def test_understated_content_length_still_limited(
 
 @requires_db
 @pytest.mark.parametrize(
-    ("status_code", "expected_status", "detail"),
+    ("status_code", "detail"),
     [
-        (404, 404, "GitHub repository not found"),
-        (403, 502, "GitHub denied access to the repository"),
-        (401, 502, "GitHub denied access to the repository"),
-        (429, 503, "GitHub rate limit exceeded; try again later"),
-        (500, 502, "GitHub returned an unexpected response"),
-        (503, 502, "GitHub returned an unexpected response"),
-        (204, 502, "GitHub returned an unexpected response"),
+        (404, "GitHub repository not found"),
+        (403, "GitHub denied access to the repository"),
+        (401, "GitHub denied access to the repository"),
+        (429, "GitHub rate limit exceeded; try again later"),
+        (500, "GitHub returned an unexpected response"),
+        (503, "GitHub returned an unexpected response"),
+        (204, "GitHub returned an unexpected response"),
     ],
 )
 async def test_github_error_statuses_handled(
@@ -961,27 +981,25 @@ async def test_github_error_statuses_handled(
     github: respx.MockRouter,
     temp_downloads: list[Any],
     status_code: int,
-    expected_status: int,
     detail: str,
 ) -> None:
     github.get(pinned(ARCHIVE_URL)).mock(
         return_value=httpx.Response(status_code, text="SECRET-GITHUB-BODY /internal/path")
     )
     response = await _ingest(client, alice)
-    assert response.status_code == expected_status
-    assert response.json() == {"detail": detail}
+    assert await _job_error(client, alice, response) == detail
     assert "SECRET-GITHUB-BODY" not in response.text  # upstream bodies are never relayed
     await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
 
 
 @requires_db
 @pytest.mark.parametrize(
-    ("error", "expected_status", "detail"),
+    ("error", "detail"),
     [
-        (httpx.ConnectTimeout("connect timed out"), 504, "GitHub download timed out"),
-        (httpx.ReadTimeout("read timed out"), 504, "GitHub download timed out"),
-        (httpx.ConnectError("connection refused"), 502, "Could not connect to GitHub"),
-        (httpx.RemoteProtocolError("peer closed"), 502, "Could not connect to GitHub"),
+        (httpx.ConnectTimeout("connect timed out"), "GitHub download timed out"),
+        (httpx.ReadTimeout("read timed out"), "GitHub download timed out"),
+        (httpx.ConnectError("connection refused"), "Could not connect to GitHub"),
+        (httpx.RemoteProtocolError("peer closed"), "Could not connect to GitHub"),
     ],
 )
 async def test_network_failures_handled(
@@ -992,13 +1010,11 @@ async def test_network_failures_handled(
     github: respx.MockRouter,
     temp_downloads: list[Any],
     error: Exception,
-    expected_status: int,
     detail: str,
 ) -> None:
     github.get(pinned(ARCHIVE_URL)).mock(side_effect=error)
     response = await _ingest(client, alice)
-    assert response.status_code == expected_status
-    assert response.json() == {"detail": detail}
+    assert await _job_error(client, alice, response) == detail
     assert "Traceback" not in response.text
     await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
 
@@ -1017,8 +1033,7 @@ async def test_total_download_timeout(
     stream = Stream([CHUNK] * 100, delay=0.1)  # a slow, trickling server
     _serve(github, stream)
     response = await _ingest(client, alice)
-    assert response.status_code == 504
-    assert response.json() == {"detail": "GitHub download timed out"}
+    assert await _job_error(client, alice, response) == "GitHub download timed out"
     assert stream.sent < 100
     await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
 
@@ -1051,8 +1066,7 @@ async def test_redirect_outside_github_rejected(
 ) -> None:
     github.get(pinned(ARCHIVE_URL)).mock(return_value=httpx.Response(302, headers={"Location": location}))
     response = await _ingest(client, alice)
-    assert response.status_code == 502
-    assert response.json() == {"detail": "GitHub redirected to an unsupported location"}
+    assert await _job_error(client, alice, response) == "GitHub redirected to an unsupported location"
     assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL]  # target never requested
     await _assert_failed_cleanly(db_session, data_dir, alice)
 
@@ -1068,7 +1082,7 @@ async def test_relative_redirect_on_github_followed(
     github.get(pinned(moved)).mock(return_value=httpx.Response(302, headers={"Location": CODELOAD_URL}))
     github.get(pinned(CODELOAD_URL)).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
     response = await _ingest(client, alice)
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL, moved, CODELOAD_URL]
 
 
@@ -1083,8 +1097,7 @@ async def test_redirect_loop_and_chain_limits(
     github.get(pinned(ARCHIVE_URL)).mock(return_value=httpx.Response(302, headers={"Location": CODELOAD_URL}))
     github.get(pinned(CODELOAD_URL)).mock(return_value=httpx.Response(302, headers={"Location": ARCHIVE_URL}))
     loop = await _ingest(client, alice)
-    assert loop.status_code == 502
-    assert loop.json() == {"detail": "GitHub redirect loop detected"}
+    assert await _job_error(client, alice, loop) == "GitHub redirect loop detected"
     assert github.calls.call_count == 2
     await _assert_failed_cleanly(db_session, data_dir, alice)
 
@@ -1094,8 +1107,7 @@ async def test_redirect_loop_and_chain_limits(
     for current, following in zip(hops, hops[1:], strict=False):
         github.get(pinned(current)).mock(return_value=httpx.Response(302, headers={"Location": following}))
     chain = await _ingest(client, alice)
-    assert chain.status_code == 502
-    assert chain.json() == {"detail": "GitHub redirected too many times"}
+    assert await _job_error(client, alice, chain) == "GitHub redirected too many times"
     assert github.calls.call_count == github_service.MAX_REDIRECTS + 1
 
 
@@ -1105,8 +1117,7 @@ async def test_redirect_without_location_is_unexpected(
 ) -> None:
     github.get(pinned(ARCHIVE_URL)).mock(return_value=httpx.Response(302))
     response = await _ingest(client, alice)
-    assert response.status_code == 502
-    assert response.json() == {"detail": "GitHub returned an unexpected response"}
+    assert await _job_error(client, alice, response) == "GitHub returned an unexpected response"
 
 
 # --- Security properties -----------------------------------------------------------------
@@ -1135,7 +1146,7 @@ async def test_downloaded_code_is_never_executed(
         ),
     )
     response = await _ingest(client, alice)
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert not marker.exists()
     assert guard.subprocesses == []
     stored = _storage(data_dir, alice.repository_id) / "demo" / "setup.py"
@@ -1247,7 +1258,7 @@ async def test_dns_checked_before_each_connection_and_connection_pinned(
         side_effect=respond(httpx.Response(200, content=_zip(ARCHIVE)))
     )
     response = await _ingest(client, alice)
-    assert response.status_code == 200
+    assert response.status_code == 202
     # Each hop: DNS answer checked first, then the connection.
     assert dns.events == [
         "dns:github.com",
@@ -1302,8 +1313,7 @@ async def test_non_public_dns_answer_blocks_connection(
     dns.answers["github.com"] = answer
     _serve(github, _zip(ARCHIVE))
     response = await _ingest(client, alice)
-    assert response.status_code == 502
-    assert response.json() == {"detail": "GitHub resolved to a non-public address"}
+    assert await _job_error(client, alice, response) == "GitHub resolved to a non-public address"
     assert dns.lookups == ["github.com"]
     assert github.calls.call_count == 0  # no connection was attempted
     await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
@@ -1332,8 +1342,7 @@ async def test_redirect_to_github_host_with_non_public_dns_rejected(
             return_value=httpx.Response(200, content=_zip(ARCHIVE))
         )
     response = await _ingest(client, alice)
-    assert response.status_code == 502
-    assert response.json() == {"detail": "GitHub resolved to a non-public address"}
+    assert await _job_error(client, alice, response) == "GitHub resolved to a non-public address"
     assert dns.lookups == ["github.com", "codeload.github.com"]
     assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL]  # never connected
     await _assert_failed_cleanly(db_session, data_dir, alice)
@@ -1353,8 +1362,7 @@ async def test_redirect_to_github_itself_with_non_public_dns_rejected(
 
     github.get(pinned(ARCHIVE_URL)).mock(side_effect=flip_dns)
     response = await _ingest(client, alice)
-    assert response.status_code == 502
-    assert response.json() == {"detail": "GitHub resolved to a non-public address"}
+    assert await _job_error(client, alice, response) == "GitHub resolved to a non-public address"
     assert calls["count"] == 1
     assert dns.lookups == ["github.com", "github.com"]
 
@@ -1370,8 +1378,7 @@ async def test_dns_failure_handled(
 ) -> None:
     del dns.answers["github.com"]  # the mocked resolver raises socket.gaierror
     response = await _ingest(client, alice)
-    assert response.status_code == 502
-    assert response.json() == {"detail": "Could not resolve GitHub"}
+    assert await _job_error(client, alice, response) == "Could not resolve GitHub"
     assert github.calls.call_count == 0
     await _assert_failed_cleanly(db_session, data_dir, alice)
 
@@ -1386,6 +1393,6 @@ async def test_public_ipv6_answer_is_used(
     )
     github.get(pinned(CODELOAD_URL)).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
     response = await _ingest(client, alice)
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert github.calls[0].request.url.host == "2606:50c0:8000::153"
     assert github.calls[0].request.headers["host"] == "github.com"

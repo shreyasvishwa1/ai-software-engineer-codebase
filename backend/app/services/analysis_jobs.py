@@ -24,12 +24,31 @@ def new_ingestion_job(repository: Repository) -> AnalysisJob:
     )
 
 
-async def mark_processing(db: AsyncSession, job_id: uuid.UUID) -> None:
-    await db.execute(
+async def claim_pending_job(db: AsyncSession, job_id: uuid.UUID) -> bool:
+    """Atomically move a pending job to processing. Only one caller can succeed: the
+    conditional UPDATE matches no row once another worker has claimed (or finished) it."""
+    result = await db.execute(
         update(AnalysisJob)
-        .where(AnalysisJob.id == job_id)
+        .where(AnalysisJob.id == job_id, AnalysisJob.status == AnalysisJobStatus.PENDING)
         .values(status=AnalysisJobStatus.PROCESSING, started_at=func.now())
+        .returning(AnalysisJob.id)
     )
+    return result.scalar_one_or_none() is not None
+
+
+async def fail_pending_job(db: AsyncSession, job_id: uuid.UUID, error_message: str) -> bool:
+    """Fail a job that never started (e.g. it could not be queued). No-op otherwise."""
+    result = await db.execute(
+        update(AnalysisJob)
+        .where(AnalysisJob.id == job_id, AnalysisJob.status == AnalysisJobStatus.PENDING)
+        .values(
+            status=AnalysisJobStatus.FAILED,
+            error_message=error_message,
+            completed_at=func.now(),
+        )
+        .returning(AnalysisJob.id)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def mark_completed(db: AsyncSession, job_id: uuid.UUID) -> None:

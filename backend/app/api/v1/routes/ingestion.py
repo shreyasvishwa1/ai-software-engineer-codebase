@@ -9,10 +9,15 @@ from app.api.v1.dependencies import get_current_user
 from app.api.v1.routes.repositories import _get_owned_repository
 from app.config import get_settings
 from app.database import get_db
-from app.models import RepositorySourceType, RepositoryStatus, User
-from app.schemas.ingestion import IngestionResponse
+from app.models import AnalysisJobStatus, RepositorySourceType, User
+from app.schemas.ingestion import IngestionJobResponse
 from app.services.archive import MIB
-from app.services.ingestion import IngestionError, ingest_github_repository, ingest_zip_archive
+from app.services.ingestion import (
+    IngestionError,
+    create_ingestion_job,
+    queue_ingestion_job,
+    validate_github_source,
+)
 
 # Every route requires an authenticated user.
 router = APIRouter(
@@ -33,9 +38,10 @@ MULTIPART_OVERHEAD_BYTES = 64 * 1024
 # source_type=zip; GitHub repositories are downloaded from their validated source_url.
 _OPENAPI_REQUEST_BODY: dict[str, Any] = {
     "description": (
+        "Queues ingestion and returns 202 with the job to track via the repository's jobs. "
         "source_type=zip: upload the ZIP archive in the 'file' field. "
         "source_type=github: send no body; the public archive for the repository's "
-        "source_url (https://github.com/<owner>/<repository>) is downloaded."
+        "source_url (https://github.com/<owner>/<repository>) is downloaded by the worker."
     ),
     "requestBody": {
         "required": False,
@@ -54,7 +60,7 @@ _OPENAPI_REQUEST_BODY: dict[str, Any] = {
                 }
             }
         },
-    }
+    },
 }
 
 
@@ -62,25 +68,36 @@ def _error(status_code: int, detail: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail=detail)
 
 
-@router.post("/ingest", response_model=IngestionResponse, openapi_extra=_OPENAPI_REQUEST_BODY)
+def _accepted(job_id: uuid.UUID, repository_id: uuid.UUID) -> IngestionJobResponse:
+    return IngestionJobResponse(
+        job_id=job_id, repository_id=repository_id, status=AnalysisJobStatus.PENDING
+    )
+
+
+@router.post(
+    "/ingest",
+    response_model=IngestionJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    openapi_extra=_OPENAPI_REQUEST_BODY,
+)
 async def ingest_repository(
     project_id: uuid.UUID,
     repository_id: uuid.UUID,
     request: Request,
     db: DbSession,
     user: CurrentUser,
-) -> IngestionResponse:
+) -> IngestionJobResponse:
     # Ownership and source checks happen before any of the request body is read.
     repository = await _get_owned_repository(db, project_id, repository_id, user)
     if repository.source_type == RepositorySourceType.GITHUB:
-        # The archive comes from the repository's validated source_url; no body is read.
+        # The worker downloads from the repository's validated source_url; no body is read.
         try:
-            file_count = await ingest_github_repository(db, repository)
+            validate_github_source(repository)
+            job_id = await create_ingestion_job(db, repository)
+            await queue_ingestion_job(db, job_id)
         except IngestionError as exc:
             raise _error(exc.status_code, exc.detail) from None
-        return IngestionResponse(
-            repository_id=repository_id, status=RepositoryStatus.READY, file_count=file_count
-        )
+        return _accepted(job_id, repository_id)
 
     max_upload_bytes = get_settings().max_upload_size_mb * MIB
     content_length = request.headers.get("content-length")
@@ -110,13 +127,16 @@ async def ingest_repository(
             raise _error(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Upload exceeds the size limit"
             )
+        # The archive is copied under DATA_DIR before the request's upload is closed.
         try:
-            file_count = await ingest_zip_archive(db, repository, upload.file)
+            job_id = await create_ingestion_job(db, repository, upload.file)
         except IngestionError as exc:
             raise _error(exc.status_code, exc.detail) from None
     finally:
         await form.close()
 
-    return IngestionResponse(
-        repository_id=repository_id, status=RepositoryStatus.READY, file_count=file_count
-    )
+    try:
+        await queue_ingestion_job(db, job_id)
+    except IngestionError as exc:
+        raise _error(exc.status_code, exc.detail) from None
+    return _accepted(job_id, repository_id)
