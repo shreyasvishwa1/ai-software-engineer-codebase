@@ -17,6 +17,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # backend/.env, resolved from this file so it does not depend on the working directory.
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
+# Repository root; the default DATA_DIR is <repo>/data (git-ignored except .gitkeep).
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 MIN_SECRET_KEY_LENGTH = 32
 
 # JWTs are signed with SECRET_KEY, a shared secret, so only HMAC algorithms apply.
@@ -61,6 +64,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = Field(default=60, gt=0)
 
+    # Repository archive ingestion limits (the uploaded ZIP itself uses MAX_UPLOAD_SIZE_MB)
+    max_archive_file_count: int = Field(default=10000, ge=1, le=1_000_000)
+    max_extracted_size_mb: int = Field(default=500, ge=1, le=102_400)
+    max_extracted_file_size_mb: int = Field(default=25, ge=1, le=102_400)
+    max_compression_ratio: int = Field(default=100, ge=1, le=10_000)
+
+    # Local storage for extracted repositories: DATA_DIR/repositories/<repository_id>/.
+    # Relative paths are resolved against the repository root, not the working directory.
+    data_dir: Path = REPO_ROOT / "data"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -101,6 +114,20 @@ class Settings(BaseSettings):
         if value not in SUPPORTED_JWT_ALGORITHMS:
             raise ValueError(f"must be one of {', '.join(sorted(SUPPORTED_JWT_ALGORITHMS))}")
         return value
+
+    @field_validator("data_dir")
+    @classmethod
+    def _resolve_data_dir(cls, value: Path) -> Path:
+        path = value if value.is_absolute() else REPO_ROOT / value
+        return path.resolve()
+
+    @model_validator(mode="after")
+    def _validate_extraction_limits(self) -> "Settings":
+        if self.max_extracted_file_size_mb > self.max_extracted_size_mb:
+            raise ValueError(
+                "MAX_EXTRACTED_FILE_SIZE_MB must not exceed MAX_EXTRACTED_SIZE_MB"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_production(self) -> "Settings":
