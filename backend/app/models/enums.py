@@ -14,7 +14,12 @@ class RepositoryStatus(enum.StrEnum):
 
 
 class AnalysisJobStatus(enum.StrEnum):
-    QUEUED = "queued"
-    RUNNING = "running"
+    # Renamed from queued/running in migration 0002 (same meaning).
+    PENDING = "pending"
+    PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class AnalysisJobType(enum.StrEnum):
+    INGESTION = "ingestion"

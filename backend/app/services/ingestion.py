@@ -1,5 +1,8 @@
 """Synchronous ZIP ingestion for a repository (uploaded ZIP or public GitHub archive).
 
+Each run is recorded as an ingestion AnalysisJob (pending -> processing -> completed/failed)
+that is committed together with the repository claim and with the final outcome.
+
 Lifecycle (Repository.status): claim ``processing`` -> obtain the archive (the upload, or a
 GitHub download) -> extract into a staging directory ->
 replace the repository's File rows and set ``ready`` in one transaction -> swap the staging
@@ -17,11 +20,18 @@ from pathlib import Path
 from typing import IO
 
 from sqlalchemy import delete, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.config import Settings, get_settings
 from app.models import File, Repository, RepositoryStatus
+from app.services.analysis_jobs import (
+    mark_completed,
+    mark_failed,
+    mark_processing,
+    new_ingestion_job,
+)
 from app.services.archive import MIB, ArchiveError, ArchiveLimits, extract_zip
 from app.services.github import (
     GitHubError,
@@ -32,6 +42,9 @@ from app.services.github import (
 
 # Returns the archive to ingest; called after the repository has been claimed.
 ArchiveProvider = Callable[[], Awaitable[IO[bytes]]]
+
+# Stored on the job for unexpected (non-controlled) failures; never exception text.
+INTERNAL_FAILURE_MESSAGE = "Ingestion failed due to an internal error"
 
 
 class IngestionError(Exception):
@@ -89,12 +102,16 @@ def _remove_dir(path: Path) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
 
-async def _mark_failed(db: AsyncSession, repository_id: uuid.UUID) -> None:
+async def _mark_failed(
+    db: AsyncSession, repository_id: uuid.UUID, job_id: uuid.UUID, error_message: str
+) -> None:
+    """Mark the repository and its ingestion job failed together."""
     await db.execute(
         update(Repository)
         .where(Repository.id == repository_id)
         .values(status=RepositoryStatus.FAILED)
     )
+    await mark_failed(db, job_id, error_message)
     await db.commit()
 
 
@@ -139,16 +156,34 @@ async def _ingest(
     settings = get_settings()
     repository_id = repository.id
 
-    # Atomic claim: a concurrent ingestion of the same repository is rejected.
-    claimed = await db.execute(
-        update(Repository)
-        .where(Repository.id == repository_id, Repository.status != RepositoryStatus.PROCESSING)
-        .values(status=RepositoryStatus.PROCESSING)
-        .returning(Repository.id)
-    )
-    if claimed.scalar_one_or_none() is None:
-        raise IngestionError(409, "Repository ingestion is already in progress")
-    await db.commit()
+    # Atomic claim plus job creation in one transaction: either both are committed or
+    # neither is, so a failed job insert never leaves the repository stuck in processing,
+    # and a rejected claim never leaves a job behind.
+    already_running = IngestionError(409, "Repository ingestion is already in progress")
+    try:
+        claimed = await db.execute(
+            update(Repository)
+            .where(
+                Repository.id == repository_id, Repository.status != RepositoryStatus.PROCESSING
+            )
+            .values(status=RepositoryStatus.PROCESSING)
+            .returning(Repository.id)
+        )
+        if claimed.scalar_one_or_none() is None:
+            raise already_running
+        job = new_ingestion_job(repository)  # pending
+        db.add(job)
+        await db.flush()
+        job_id = job.id
+        await mark_processing(db, job_id)
+        await db.commit()
+    except IntegrityError:
+        # The active-ingestion unique index rejected a second active job.
+        await db.rollback()
+        raise already_running from None
+    except Exception:
+        await db.rollback()
+        raise
 
     staging: Path | None = None
     try:
@@ -176,12 +211,14 @@ async def _ingest(
             .where(Repository.id == repository_id)
             .values(status=RepositoryStatus.READY)
         )
+        await mark_completed(db, job_id)
         await db.commit()
-    except Exception:
+    except Exception as exc:
         await db.rollback()
         if staging is not None:
             await run_in_threadpool(_remove_dir, staging)
-        await _mark_failed(db, repository_id)
+        message = exc.detail if isinstance(exc, IngestionError) else INTERNAL_FAILURE_MESSAGE
+        await _mark_failed(db, repository_id, job_id, message)
         raise
 
     try:
@@ -190,6 +227,7 @@ async def _ingest(
         )
     except OSError:
         await run_in_threadpool(_remove_dir, staging)
-        await _mark_failed(db, repository_id)
-        raise IngestionError(500, "Repository storage could not be updated") from None
+        storage_error = IngestionError(500, "Repository storage could not be updated")
+        await _mark_failed(db, repository_id, job_id, storage_error.detail)
+        raise storage_error from None
     return len(files)

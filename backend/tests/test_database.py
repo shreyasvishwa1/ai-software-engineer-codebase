@@ -33,9 +33,9 @@ def test_relationships() -> None:
     expected = {
         User: {"projects": Project},
         Project: {"owner": User, "repositories": Repository, "analysis_jobs": AnalysisJob},
-        Repository: {"project": Project, "files": File},
+        Repository: {"project": Project, "files": File, "analysis_jobs": AnalysisJob},
         File: {"repository": Repository},
-        AnalysisJob: {"project": Project},
+        AnalysisJob: {"project": Project, "repository": Repository},
     }
     for model, rels in expected.items():
         mapper = inspect(model)
@@ -53,6 +53,7 @@ def test_foreign_keys_cascade_on_delete() -> None:
         ("repositories", "project_id"): ("projects", "CASCADE"),
         ("files", "repository_id"): ("repositories", "CASCADE"),
         ("analysis_jobs", "project_id"): ("projects", "CASCADE"),
+        ("analysis_jobs", "repository_id"): ("repositories", "CASCADE"),
     }
 
 
@@ -72,13 +73,15 @@ def test_unique_constraints_and_indexes() -> None:
         ("projects", ("user_id",)),
         ("repositories", ("project_id",)),
         ("analysis_jobs", ("project_id",)),
+        ("analysis_jobs", ("repository_id", "created_at")),
+        ("analysis_jobs", ("repository_id",)),  # partial unique: one active ingestion job
     }
 
 
 def test_status_enum_values() -> None:
     tables = Base.metadata.tables
     assert tables["repositories"].c.status.type.enums == ["pending", "processing", "ready", "failed"]
-    assert tables["analysis_jobs"].c.status.type.enums == ["queued", "running", "completed", "failed"]
+    assert tables["analysis_jobs"].c.status.type.enums == ["pending", "processing", "completed", "failed"]
 
 
 def test_engine_is_async_asyncpg_and_lazy() -> None:
@@ -138,7 +141,7 @@ def test_alembic_single_head_and_offline_sql_covers_the_five_tables() -> None:
         text=True,
         check=True,
     )
-    assert heads.stdout.split() == ["0001", "(head)"]
+    assert heads.stdout.split() == ["0002", "(head)"]
 
 
 @pytest.mark.skipif(
@@ -153,6 +156,6 @@ async def test_migrated_database_connectivity() -> None:
             names = await conn.run_sync(lambda c: set(inspect(c).get_table_names()))
             assert names == TABLES | {"alembic_version"}
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0001"
+            assert version == "0002"
     finally:
         await engine.dispose()

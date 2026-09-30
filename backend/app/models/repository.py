@@ -8,6 +8,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import RepositorySourceType, RepositoryStatus
 
 if TYPE_CHECKING:
+    from app.models.analysis_job import AnalysisJob
     from app.models.file import File
     from app.models.project import Project
 
@@ -42,5 +43,8 @@ class Repository(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     project: Mapped["Project"] = relationship(back_populates="repositories")
     files: Mapped[list["File"]] = relationship(
+        back_populates="repository", cascade="all, delete-orphan", passive_deletes=True
+    )
+    analysis_jobs: Mapped[list["AnalysisJob"]] = relationship(
         back_populates="repository", cascade="all, delete-orphan", passive_deletes=True
     )
