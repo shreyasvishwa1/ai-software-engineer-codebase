@@ -114,6 +114,48 @@ def guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[Guard]:
     assert recorded.subprocesses == [], "unexpected subprocess execution"
 
 
+# Mocked DNS: fixed public answers. Requests are made to these (validated) addresses.
+GITHUB_IP = "140.82.112.3"
+CODELOAD_IP = "140.82.112.10"
+PUBLIC_DNS = {"github.com": [GITHUB_IP], "codeload.github.com": [CODELOAD_IP]}
+REAL_RESOLVE_HOST = github_service.resolve_host
+
+
+@dataclass
+class FakeDNS:
+    answers: dict[str, list[str]]
+    lookups: list[str] = field(default_factory=list)
+    events: list[str] = field(default_factory=list)
+
+
+@pytest.fixture(autouse=True)
+def dns(monkeypatch: pytest.MonkeyPatch) -> FakeDNS:
+    fake = FakeDNS(answers={host: list(ips) for host, ips in PUBLIC_DNS.items()})
+
+    async def fake_resolve_host(host: str) -> list[str]:
+        fake.lookups.append(host)
+        fake.events.append(f"dns:{host}")
+        if host not in fake.answers:
+            raise socket.gaierror("mocked: unknown host")
+        return list(fake.answers[host])
+
+    monkeypatch.setattr(github_service, "resolve_host", fake_resolve_host)
+    return fake
+
+
+def pinned(url: str) -> str:
+    """The URL actually requested: the logical host replaced by its mocked DNS address."""
+    parts = urlsplit(url)
+    address = PUBLIC_DNS.get(str(parts.hostname), [str(parts.hostname)])[0]
+    netloc = f"[{address}]" if ":" in address else address
+    return parts._replace(netloc=netloc).geturl()
+
+
+def _logical(request: httpx.Request) -> str:
+    """Rebuild the logical GitHub URL of a pinned request from its Host header."""
+    return f"https://{request.headers['host']}{request.url.raw_path.decode()}"
+
+
 @pytest.fixture
 def github() -> Iterator[respx.MockRouter]:
     # Any request that does not match a declared route fails the test.
@@ -138,18 +180,19 @@ class Stream(httpx.AsyncByteStream):
 
 
 def _serve(router: respx.MockRouter, body: bytes | Stream, **headers: str) -> respx.Route:
-    router.get(ARCHIVE_URL).mock(
+    router.get(pinned(ARCHIVE_URL)).mock(
         return_value=httpx.Response(302, headers={"Location": CODELOAD_URL})
     )
     if isinstance(body, Stream):
         response = httpx.Response(200, headers=headers, stream=body)
     else:
         response = httpx.Response(200, headers={"Content-Type": "application/zip"}, content=body)
-    return router.get(CODELOAD_URL).mock(return_value=response)
+    return router.get(pinned(CODELOAD_URL)).mock(return_value=response)
 
 
 def _requested_hosts(router: respx.MockRouter) -> set[str]:
-    return {str(urlsplit(str(call.request.url)).hostname) for call in router.calls}
+    """Logical hosts requested (the Host header; connections go to the validated IP)."""
+    return {call.request.headers["host"] for call in router.calls}
 
 
 # --- URL validation (no database, no network) --------------------------------------------
@@ -504,7 +547,7 @@ async def test_successful_github_ingestion(
         "file_count": 3,
     }
 
-    assert [str(c.request.url) for c in github.calls] == [ARCHIVE_URL, CODELOAD_URL]
+    assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL, CODELOAD_URL]
     assert _requested_hosts(github) <= {"github.com", "codeload.github.com"}
     assert all(c.request.headers["accept-encoding"] == "identity" for c in github.calls)
     assert all("authorization" not in c.request.headers for c in github.calls)
@@ -532,10 +575,10 @@ async def test_default_branch_selects_archive_ref(
         client, alice.headers, alice.project_id, default_branch="feature/new-ui"
     )
     branch_url = "https://github.com/octo/demo/archive/refs/heads/feature/new-ui.zip"
-    github.get(branch_url).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
+    github.get(pinned(branch_url)).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
     response = await _ingest(client, alice, repository_id=repository_id)
     assert response.status_code == 200
-    assert [str(c.request.url) for c in github.calls] == [branch_url]
+    assert [_logical(c.request) for c in github.calls] == [branch_url]
 
 
 @requires_db
@@ -921,7 +964,7 @@ async def test_github_error_statuses_handled(
     expected_status: int,
     detail: str,
 ) -> None:
-    github.get(ARCHIVE_URL).mock(
+    github.get(pinned(ARCHIVE_URL)).mock(
         return_value=httpx.Response(status_code, text="SECRET-GITHUB-BODY /internal/path")
     )
     response = await _ingest(client, alice)
@@ -952,7 +995,7 @@ async def test_network_failures_handled(
     expected_status: int,
     detail: str,
 ) -> None:
-    github.get(ARCHIVE_URL).mock(side_effect=error)
+    github.get(pinned(ARCHIVE_URL)).mock(side_effect=error)
     response = await _ingest(client, alice)
     assert response.status_code == expected_status
     assert response.json() == {"detail": detail}
@@ -1006,11 +1049,11 @@ async def test_redirect_outside_github_rejected(
     github: respx.MockRouter,
     location: str,
 ) -> None:
-    github.get(ARCHIVE_URL).mock(return_value=httpx.Response(302, headers={"Location": location}))
+    github.get(pinned(ARCHIVE_URL)).mock(return_value=httpx.Response(302, headers={"Location": location}))
     response = await _ingest(client, alice)
     assert response.status_code == 502
     assert response.json() == {"detail": "GitHub redirected to an unsupported location"}
-    assert [str(c.request.url) for c in github.calls] == [ARCHIVE_URL]  # target never requested
+    assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL]  # target never requested
     await _assert_failed_cleanly(db_session, data_dir, alice)
 
 
@@ -1019,14 +1062,14 @@ async def test_relative_redirect_on_github_followed(
     client: httpx.AsyncClient, alice: Owner, github: respx.MockRouter
 ) -> None:
     moved = "https://github.com/octo/demo-renamed/archive/HEAD.zip"
-    github.get(ARCHIVE_URL).mock(
+    github.get(pinned(ARCHIVE_URL)).mock(
         return_value=httpx.Response(301, headers={"Location": "/octo/demo-renamed/archive/HEAD.zip"})
     )
-    github.get(moved).mock(return_value=httpx.Response(302, headers={"Location": CODELOAD_URL}))
-    github.get(CODELOAD_URL).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
+    github.get(pinned(moved)).mock(return_value=httpx.Response(302, headers={"Location": CODELOAD_URL}))
+    github.get(pinned(CODELOAD_URL)).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
     response = await _ingest(client, alice)
     assert response.status_code == 200
-    assert [str(c.request.url) for c in github.calls] == [ARCHIVE_URL, moved, CODELOAD_URL]
+    assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL, moved, CODELOAD_URL]
 
 
 @requires_db
@@ -1037,8 +1080,8 @@ async def test_redirect_loop_and_chain_limits(
     alice: Owner,
     github: respx.MockRouter,
 ) -> None:
-    github.get(ARCHIVE_URL).mock(return_value=httpx.Response(302, headers={"Location": CODELOAD_URL}))
-    github.get(CODELOAD_URL).mock(return_value=httpx.Response(302, headers={"Location": ARCHIVE_URL}))
+    github.get(pinned(ARCHIVE_URL)).mock(return_value=httpx.Response(302, headers={"Location": CODELOAD_URL}))
+    github.get(pinned(CODELOAD_URL)).mock(return_value=httpx.Response(302, headers={"Location": ARCHIVE_URL}))
     loop = await _ingest(client, alice)
     assert loop.status_code == 502
     assert loop.json() == {"detail": "GitHub redirect loop detected"}
@@ -1047,9 +1090,9 @@ async def test_redirect_loop_and_chain_limits(
 
     github.reset()
     hops = [f"https://codeload.github.com/hop/{i}" for i in range(10)]
-    github.get(ARCHIVE_URL).mock(return_value=httpx.Response(302, headers={"Location": hops[0]}))
+    github.get(pinned(ARCHIVE_URL)).mock(return_value=httpx.Response(302, headers={"Location": hops[0]}))
     for current, following in zip(hops, hops[1:], strict=False):
-        github.get(current).mock(return_value=httpx.Response(302, headers={"Location": following}))
+        github.get(pinned(current)).mock(return_value=httpx.Response(302, headers={"Location": following}))
     chain = await _ingest(client, alice)
     assert chain.status_code == 502
     assert chain.json() == {"detail": "GitHub redirected too many times"}
@@ -1060,7 +1103,7 @@ async def test_redirect_loop_and_chain_limits(
 async def test_redirect_without_location_is_unexpected(
     client: httpx.AsyncClient, alice: Owner, github: respx.MockRouter
 ) -> None:
-    github.get(ARCHIVE_URL).mock(return_value=httpx.Response(302))
+    github.get(pinned(ARCHIVE_URL)).mock(return_value=httpx.Response(302))
     response = await _ingest(client, alice)
     assert response.status_code == 502
     assert response.json() == {"detail": "GitHub returned an unexpected response"}
@@ -1115,3 +1158,234 @@ def test_client_ignores_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> No
     timeout = captured["timeout"]
     assert timeout.connect == github_service.CONNECT_TIMEOUT_SECONDS
     assert timeout.read == github_service.READ_TIMEOUT_SECONDS
+
+
+# --- DNS validation (defense in depth against rebinding / non-public answers) ------------
+
+NON_PUBLIC_ADDRESSES = [
+    "127.0.0.1",  # loopback
+    "127.10.20.30",
+    "::1",
+    "10.0.0.1",  # RFC 1918
+    "10.255.255.254",
+    "172.16.0.1",
+    "172.31.255.254",
+    "192.168.0.1",
+    "192.168.255.254",
+    "169.254.169.254",  # link-local / cloud metadata service
+    "169.254.1.1",
+    "fe80::1",  # IPv6 link-local
+    "fe80::1%1",
+    "fc00::1",  # IPv6 unique local (private)
+    "fd12:3456:789a::1",
+    "0.0.0.0",  # unspecified
+    "::",
+    "224.0.0.1",  # multicast (is_global is True for some multicast ranges)
+    "233.252.0.1",
+    "ff02::1",
+    "100.64.0.1",  # carrier-grade NAT
+    "192.0.2.10",  # documentation
+    "198.18.0.1",  # benchmarking
+    "240.0.0.1",  # reserved
+    "255.255.255.255",
+    "::ffff:127.0.0.1",  # IPv4-mapped IPv6
+    "::ffff:10.0.0.1",
+    "::ffff:169.254.169.254",
+    "not-an-ip",
+    "",
+]
+PUBLIC_ADDRESSES = [
+    "140.82.112.3",
+    "8.8.8.8",
+    "172.32.0.1",
+    "2606:50c0:8000::153",
+    "2001:4860:4860::8888",
+]
+
+
+@pytest.mark.parametrize("address", NON_PUBLIC_ADDRESSES)
+def test_non_public_addresses_rejected(address: str) -> None:
+    assert github_service.is_public_address(address) is False
+
+
+@pytest.mark.parametrize("address", PUBLIC_ADDRESSES)
+def test_public_addresses_allowed(address: str) -> None:
+    assert github_service.is_public_address(address) is True
+
+
+async def test_real_resolver_result_for_localhost_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Uses the real resolver (localhost resolves locally, no network) behind the real check.
+    monkeypatch.setattr(github_service, "resolve_host", REAL_RESOLVE_HOST)
+    addresses = await github_service.resolve_host("localhost")
+    assert addresses
+    assert not any(github_service.is_public_address(a) for a in addresses)
+    with pytest.raises(GitHubError) as excinfo:
+        await github_service._resolve_public_address("localhost")
+    assert (excinfo.value.status_code, excinfo.value.detail) == (
+        502,
+        "GitHub resolved to a non-public address",
+    )
+
+
+@requires_db
+async def test_dns_checked_before_each_connection_and_connection_pinned(
+    client: httpx.AsyncClient, alice: Owner, github: respx.MockRouter, dns: FakeDNS
+) -> None:
+    def respond(response: httpx.Response) -> Any:
+        def side_effect(request: httpx.Request) -> httpx.Response:
+            dns.events.append(f"http:{request.headers['host']}")
+            return response
+
+        return side_effect
+
+    github.get(pinned(ARCHIVE_URL)).mock(
+        side_effect=respond(httpx.Response(302, headers={"Location": CODELOAD_URL}))
+    )
+    github.get(pinned(CODELOAD_URL)).mock(
+        side_effect=respond(httpx.Response(200, content=_zip(ARCHIVE)))
+    )
+    response = await _ingest(client, alice)
+    assert response.status_code == 200
+    # Each hop: DNS answer checked first, then the connection.
+    assert dns.events == [
+        "dns:github.com",
+        "http:github.com",
+        "dns:codeload.github.com",
+        "http:codeload.github.com",
+    ]
+    first, second = (call.request for call in github.calls)
+    # The connection targets the validated address; Host and TLS SNI stay the GitHub name.
+    assert (first.url.host, first.headers["host"], first.extensions["sni_hostname"]) == (
+        GITHUB_IP,
+        "github.com",
+        "github.com",
+    )
+    assert (second.url.host, second.headers["host"], second.extensions["sni_hostname"]) == (
+        CODELOAD_IP,
+        "codeload.github.com",
+        "codeload.github.com",
+    )
+
+
+@requires_db
+@pytest.mark.parametrize(
+    "answer",
+    [
+        ["127.0.0.1"],
+        ["::1"],
+        ["10.1.2.3"],
+        ["172.16.5.4"],
+        ["192.168.10.20"],
+        ["169.254.169.254"],
+        ["fe80::1"],
+        ["fd00::1"],
+        ["0.0.0.0"],
+        ["::"],
+        ["224.0.0.1"],
+        ["::ffff:127.0.0.1"],
+        [GITHUB_IP, "10.0.0.1"],  # one bad address poisons the whole answer
+        [],
+    ],
+)
+async def test_non_public_dns_answer_blocks_connection(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    data_dir: Path,
+    alice: Owner,
+    github: respx.MockRouter,
+    dns: FakeDNS,
+    temp_downloads: list[Any],
+    answer: list[str],
+) -> None:
+    dns.answers["github.com"] = answer
+    _serve(github, _zip(ARCHIVE))
+    response = await _ingest(client, alice)
+    assert response.status_code == 502
+    assert response.json() == {"detail": "GitHub resolved to a non-public address"}
+    assert dns.lookups == ["github.com"]
+    assert github.calls.call_count == 0  # no connection was attempted
+    await _assert_failed_cleanly(db_session, data_dir, alice, temp_downloads)
+
+
+@requires_db
+@pytest.mark.parametrize(
+    "redirect_answer", [["169.254.169.254"], ["10.0.0.1"], ["127.0.0.1"], ["fc00::1"]]
+)
+async def test_redirect_to_github_host_with_non_public_dns_rejected(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    data_dir: Path,
+    alice: Owner,
+    github: respx.MockRouter,
+    dns: FakeDNS,
+    redirect_answer: list[str],
+) -> None:
+    dns.answers["codeload.github.com"] = redirect_answer
+    github.get(pinned(ARCHIVE_URL)).mock(
+        return_value=httpx.Response(302, headers={"Location": CODELOAD_URL})
+    )
+    for address in redirect_answer:
+        netloc = f"[{address}]" if ":" in address else address
+        github.get(f"https://{netloc}/octo/demo/zip/refs/heads/main").mock(
+            return_value=httpx.Response(200, content=_zip(ARCHIVE))
+        )
+    response = await _ingest(client, alice)
+    assert response.status_code == 502
+    assert response.json() == {"detail": "GitHub resolved to a non-public address"}
+    assert dns.lookups == ["github.com", "codeload.github.com"]
+    assert [_logical(c.request) for c in github.calls] == [ARCHIVE_URL]  # never connected
+    await _assert_failed_cleanly(db_session, data_dir, alice)
+
+
+@requires_db
+async def test_redirect_to_github_itself_with_non_public_dns_rejected(
+    client: httpx.AsyncClient, alice: Owner, github: respx.MockRouter, dns: FakeDNS
+) -> None:
+    # Even the original host is re-checked on every hop (the answer changes after hop one).
+    calls = {"count": 0}
+
+    def flip_dns(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        dns.answers["github.com"] = ["192.168.1.1"]
+        return httpx.Response(302, headers={"Location": "/octo/other/archive/HEAD.zip"})
+
+    github.get(pinned(ARCHIVE_URL)).mock(side_effect=flip_dns)
+    response = await _ingest(client, alice)
+    assert response.status_code == 502
+    assert response.json() == {"detail": "GitHub resolved to a non-public address"}
+    assert calls["count"] == 1
+    assert dns.lookups == ["github.com", "github.com"]
+
+
+@requires_db
+async def test_dns_failure_handled(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    data_dir: Path,
+    alice: Owner,
+    github: respx.MockRouter,
+    dns: FakeDNS,
+) -> None:
+    del dns.answers["github.com"]  # the mocked resolver raises socket.gaierror
+    response = await _ingest(client, alice)
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Could not resolve GitHub"}
+    assert github.calls.call_count == 0
+    await _assert_failed_cleanly(db_session, data_dir, alice)
+
+
+@requires_db
+async def test_public_ipv6_answer_is_used(
+    client: httpx.AsyncClient, alice: Owner, github: respx.MockRouter, dns: FakeDNS
+) -> None:
+    dns.answers["github.com"] = ["2606:50c0:8000::153"]
+    github.get("https://[2606:50c0:8000::153]/octo/demo/archive/HEAD.zip").mock(
+        return_value=httpx.Response(302, headers={"Location": CODELOAD_URL})
+    )
+    github.get(pinned(CODELOAD_URL)).mock(return_value=httpx.Response(200, content=_zip(ARCHIVE)))
+    response = await _ingest(client, alice)
+    assert response.status_code == 200
+    assert github.calls[0].request.url.host == "2606:50c0:8000::153"
+    assert github.calls[0].request.headers["host"] == "github.com"

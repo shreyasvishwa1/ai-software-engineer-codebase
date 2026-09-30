@@ -3,14 +3,18 @@
 Only ``https://github.com/<owner>/<repository>`` URLs are accepted, validated without any
 network or DNS access. The download URL is built from the validated owner/repository
 (never taken from the client), redirects are followed manually and only to GitHub hosts,
-and the response is streamed with a hard byte limit. No git, subprocess or authentication.
+every destination's DNS answer must be public and the connection is made to that checked
+address, and the response is streamed with a hard byte limit. No git, subprocess or
+authentication.
 """
 
 import asyncio
+import ipaddress
 import re
+import socket
 from dataclasses import dataclass
 from typing import IO
-from urllib.parse import SplitResult, quote, urljoin, urlsplit
+from urllib.parse import SplitResult, quote, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -145,6 +149,50 @@ def archive_download_url(repository: GitHubRepository, default_branch: str | Non
     return validate_download_url(url)
 
 
+def is_public_address(address: str) -> bool:
+    """True only for globally routable unicast addresses (IPv4-mapped IPv6 is unwrapped)."""
+    try:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return (
+        ip.is_global  # excludes private, loopback, link-local, unspecified, reserved, CGNAT
+        and not ip.is_multicast  # is_global is True for some multicast ranges
+        and not ip.is_private
+        and not ip.is_loopback
+        and not ip.is_link_local
+        and not ip.is_unspecified
+        and not ip.is_reserved
+    )
+
+
+async def resolve_host(host: str) -> list[str]:
+    """Resolve ``host`` to its unique IP addresses (in resolver order)."""
+    infos = await asyncio.get_running_loop().getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+    return list(dict.fromkeys(str(info[4][0]) for info in infos))
+
+
+async def _resolve_public_address(host: str) -> str:
+    """Resolve ``host`` and return an address to connect to, rejecting the whole answer
+    if any resolved address is non-public."""
+    try:
+        addresses = await resolve_host(host)
+    except OSError:
+        raise GitHubError(502, "Could not resolve GitHub") from None
+    if not addresses or not all(is_public_address(address) for address in addresses):
+        raise GitHubError(502, "GitHub resolved to a non-public address")
+    return addresses[0]
+
+
+def _pinned_url(url: str, address: str) -> str:
+    """``url`` with its host replaced by the validated IP, so no second DNS lookup happens."""
+    parts = urlsplit(url)
+    netloc = f"[{address}]" if ":" in address else address
+    return urlunsplit(("https", netloc, parts.path, parts.query, ""))
+
+
 def _raise_for_status(response: httpx.Response) -> None:
     if response.status_code == 200:
         return
@@ -188,7 +236,17 @@ async def download_archive(url: str, dest: IO[bytes], max_bytes: int) -> None:
                 current = validate_download_url(url)
                 visited = {current}
                 for _ in range(MAX_REDIRECTS + 1):
-                    async with client.stream("GET", current) as response:
+                    # Every hop is resolved and checked before connecting, and the request
+                    # goes to the checked address; Host and TLS SNI/certificate verification
+                    # still use the GitHub hostname.
+                    host = str(urlsplit(current).hostname)
+                    address = await _resolve_public_address(host)
+                    async with client.stream(
+                        "GET",
+                        _pinned_url(current, address),
+                        headers={"Host": host},
+                        extensions={"sni_hostname": host},
+                    ) as response:
                         if response.is_redirect:
                             location = response.headers.get("location")
                             if not location:
