@@ -6,8 +6,9 @@ so routes registered here are served at ``/api/v1/...``.
 
 from fastapi import APIRouter
 
-from app.api.v1.routes import auth, health
+from app.api.v1.routes import auth, health, projects
 
 api_router = APIRouter(prefix="/v1")
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(projects.router)

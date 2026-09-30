@@ -52,6 +52,8 @@ def test_openapi_generation(client: TestClient) -> None:
         "/api/v1/auth/register",
         "/api/v1/auth/login",
         "/api/v1/auth/me",
+        "/api/v1/projects",
+        "/api/v1/projects/{project_id}",
     }
 
 
