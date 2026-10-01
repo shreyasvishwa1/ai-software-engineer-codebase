@@ -33,6 +33,9 @@ def get_engine() -> AsyncEngine:
     return create_async_engine(
         get_database_url(),
         echo=get_settings().debug,
+        # Unless DEBUG=true, SQLAlchemy does not render bound parameter values in SQL logs or
+        # in its exception formatting. Database-server-generated error text is not sanitized.
+        hide_parameters=not get_settings().debug,
         pool_pre_ping=True,
     )
 

@@ -13,14 +13,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+# Interactive docs and the OpenAPI schema are not served in production.
+docs_enabled = settings.environment != "production"
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="AI Software Engineer - Codebase Intelligence Platform",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
 )
 
 # CORS
@@ -53,12 +55,15 @@ app.include_router(health_router)
 
 @app.get("/")
 def root():
-    return {
+    info = {
         "name": settings.app_name,
         "version": settings.app_version,
         "status": "running",
         "docs": "/docs",
         "health": "/health",
     }
+    if not docs_enabled:
+        del info["docs"]
+    return info
 
 logger.info(f"{settings.app_name} v{settings.app_version} initialized")
