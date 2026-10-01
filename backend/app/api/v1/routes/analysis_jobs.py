@@ -85,8 +85,9 @@ async def cancel_job(
     db: DbSession,
     user: CurrentUser,
 ) -> AnalysisJob:
-    """Cancel a pending job (it becomes failed with "Ingestion was cancelled"). Jobs that
-    are processing or finished are left unchanged (409)."""
+    """Cancel a pending ingestion or analysis job (it becomes failed with "Ingestion was
+    cancelled" or "Analysis was cancelled"). Jobs that are processing or finished are left
+    unchanged (409)."""
     owned = (
         _owned_jobs(project_id, repository_id, user)
         .where(AnalysisJob.id == job_id)

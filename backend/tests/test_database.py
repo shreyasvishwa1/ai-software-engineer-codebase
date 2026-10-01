@@ -14,10 +14,10 @@ from app.config import ConfigurationError, Settings
 from app.models import AnalysisJob, Base, File, Project, Repository, User
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-TABLES = {"users", "projects", "repositories", "files", "analysis_jobs"}
+TABLES = {"users", "projects", "repositories", "files", "analysis_jobs", "file_metrics"}
 
 
-def test_metadata_registers_exactly_the_five_tables() -> None:
+def test_metadata_registers_exactly_the_six_tables() -> None:
     assert set(Base.metadata.tables) == TABLES
 
 
@@ -54,6 +54,9 @@ def test_foreign_keys_cascade_on_delete() -> None:
         ("files", "repository_id"): ("repositories", "CASCADE"),
         ("analysis_jobs", "project_id"): ("projects", "CASCADE"),
         ("analysis_jobs", "repository_id"): ("repositories", "CASCADE"),
+        ("file_metrics", "file_id"): ("files", "CASCADE"),
+        ("file_metrics", "repository_id"): ("repositories", "CASCADE"),
+        ("file_metrics", "analysis_job_id"): ("analysis_jobs", "SET NULL"),
     }
 
 
@@ -74,7 +77,9 @@ def test_unique_constraints_and_indexes() -> None:
         ("repositories", ("project_id",)),
         ("analysis_jobs", ("project_id",)),
         ("analysis_jobs", ("repository_id", "created_at")),
-        ("analysis_jobs", ("repository_id",)),  # partial unique: one active ingestion job
+        # Partial unique indexes: one active ingestion job, one active code-metrics job.
+        ("analysis_jobs", ("repository_id",)),
+        ("file_metrics", ("repository_id",)),
     }
 
 
@@ -121,7 +126,7 @@ def test_invalid_database_url_rejected_without_leaking(
     assert "SECRET-MARKER" not in str(excinfo.value)
 
 
-def test_alembic_single_head_and_offline_sql_covers_the_five_tables() -> None:
+def test_alembic_single_head_and_offline_sql_covers_the_six_tables() -> None:
     # Offline mode loads alembic/env.py and the app metadata without connecting.
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
@@ -141,7 +146,7 @@ def test_alembic_single_head_and_offline_sql_covers_the_five_tables() -> None:
         text=True,
         check=True,
     )
-    assert heads.stdout.split() == ["0002", "(head)"]
+    assert heads.stdout.split() == ["0003", "(head)"]
 
 
 @pytest.mark.skipif(
@@ -156,6 +161,6 @@ async def test_migrated_database_connectivity() -> None:
             names = await conn.run_sync(lambda c: set(inspect(c).get_table_names()))
             assert names == TABLES | {"alembic_version"}
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0002"
+            assert version == "0003"
     finally:
         await engine.dispose()

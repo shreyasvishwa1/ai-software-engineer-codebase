@@ -9,6 +9,7 @@ from app.models.enums import (
     RepositoryStatus,
 )
 from app.models.file import File
+from app.models.file_metric import FileMetric
 from app.models.project import Project
 from app.models.repository import Repository
 from app.models.user import User
@@ -19,6 +20,7 @@ __all__ = [
     "AnalysisJobType",
     "Base",
     "File",
+    "FileMetric",
     "Project",
     "Repository",
     "RepositorySourceType",

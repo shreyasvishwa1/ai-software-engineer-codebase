@@ -15,14 +15,17 @@ maintenance task removes the upload of the no-longer-active job later.
 import uuid
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.config import get_settings
+from app.models import AnalysisJob, AnalysisJobType
 from app.services.analysis_jobs import fail_pending_job
 from app.services.ingestion import ingestion_artifact_path
 
 CANCELLED_MESSAGE = "Ingestion was cancelled"
+ANALYSIS_CANCELLED_MESSAGE = "Analysis was cancelled"  # code-metrics jobs
 
 
 def _remove_upload(path: Path) -> None:
@@ -35,8 +38,17 @@ def _remove_upload(path: Path) -> None:
 async def cancel_pending_ingestion_job(db: AsyncSession, job_id: uuid.UUID) -> bool:
     """Cancel ``job_id`` if it is still pending. Returns False (and changes nothing) when
     it is not: claimed by a worker, already finished, or gone. The caller must have
-    authorized the job; its upload path is derived from the id only."""
-    if not await fail_pending_job(db, job_id, CANCELLED_MESSAGE):
+    authorized the job; its upload path is derived from the id only.
+
+    The fixed message depends on the (immutable) job type: ingestion jobs keep
+    CANCELLED_MESSAGE, code-metrics jobs get ANALYSIS_CANCELLED_MESSAGE."""
+    job_type = await db.scalar(select(AnalysisJob.job_type).where(AnalysisJob.id == job_id))
+    message = (
+        ANALYSIS_CANCELLED_MESSAGE
+        if job_type == AnalysisJobType.CODE_METRICS
+        else CANCELLED_MESSAGE
+    )
+    if not await fail_pending_job(db, job_id, message):
         await db.rollback()
         return False
     await db.commit()

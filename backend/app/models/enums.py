@@ -23,3 +23,4 @@ class AnalysisJobStatus(enum.StrEnum):
 
 class AnalysisJobType(enum.StrEnum):
     INGESTION = "ingestion"
+    CODE_METRICS = "code_metrics"  # added in migration 0003

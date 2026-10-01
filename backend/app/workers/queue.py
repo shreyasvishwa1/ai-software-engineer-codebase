@@ -15,6 +15,7 @@ from arq.connections import RedisSettings
 from app.config import get_settings
 
 INGESTION_TASK = "ingest_repository"
+CODE_METRICS_TASK = "analyze_code_metrics"
 # Fail fast when Redis is unavailable instead of arq's default retry loop.
 _CONNECTION_RETRIES = 1
 
@@ -44,5 +45,16 @@ async def enqueue_ingestion_job(job_id: uuid.UUID) -> None:
     )
     try:
         await pool.enqueue_job(INGESTION_TASK, str(job_id), _job_id=str(job_id))
+    finally:
+        await pool.aclose()
+
+
+async def enqueue_code_metrics_job(job_id: uuid.UUID) -> None:
+    """Queue the code-metrics task for ``job_id`` (payload: the job id only, as for ingestion)."""
+    pool = await create_pool(
+        redis_settings(), job_serializer=serialize_job, job_deserializer=deserialize_job
+    )
+    try:
+        await pool.enqueue_job(CODE_METRICS_TASK, str(job_id), _job_id=str(job_id))
     finally:
         await pool.aclose()

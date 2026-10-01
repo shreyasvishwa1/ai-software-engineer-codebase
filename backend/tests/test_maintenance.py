@@ -41,7 +41,7 @@ from app.models import (
 from app.services import ingestion, maintenance
 from app.services.maintenance import MaintenanceReport, maintenance_task, run_maintenance
 from app.workers import worker
-from app.workers.queue import INGESTION_TASK, deserialize_job, serialize_job
+from app.workers.queue import CODE_METRICS_TASK, INGESTION_TASK, deserialize_job, serialize_job
 from app.workers.worker import WorkerSettings
 from tests.test_worker import _zip, install_inline_worker
 
@@ -270,7 +270,7 @@ def test_worker_registers_maintenance_cron() -> None:
 
 
 def test_existing_ingestion_worker_settings_unchanged() -> None:
-    assert [f.name for f in WorkerSettings.functions] == [INGESTION_TASK]
+    assert [f.name for f in WorkerSettings.functions] == [INGESTION_TASK, CODE_METRICS_TASK]
     assert WorkerSettings.functions[0].coroutine is worker.ingest_repository
     assert WorkerSettings.max_tries == 1
     assert WorkerSettings.keep_result == 0

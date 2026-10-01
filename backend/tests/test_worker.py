@@ -50,7 +50,7 @@ from app.services import ingestion as ingestion_service
 from app.services.analysis_jobs import claim_pending_job
 from app.services.ingestion import ingestion_artifact_path, run_ingestion_job
 from app.workers import queue as queue_module
-from app.workers.queue import INGESTION_TASK, deserialize_job, serialize_job
+from app.workers.queue import CODE_METRICS_TASK, INGESTION_TASK, deserialize_job, serialize_job
 from app.workers.worker import WorkerSettings, ingest_repository
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
@@ -132,7 +132,7 @@ def test_job_payload_serialization_is_json() -> None:
 
 
 def test_worker_settings() -> None:
-    assert [f.name for f in WorkerSettings.functions] == [INGESTION_TASK]
+    assert [f.name for f in WorkerSettings.functions] == [INGESTION_TASK, CODE_METRICS_TASK]
     assert WorkerSettings.max_tries == 1  # no automatic retries
     assert WorkerSettings.keep_result == 0  # no stored results
     assert WorkerSettings.job_serializer is serialize_job

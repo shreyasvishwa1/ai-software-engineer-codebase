@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     analysis_jobs,
     auth,
+    code_metrics,
     health,
     ingestion,
     projects,
@@ -24,3 +25,4 @@ api_router.include_router(repositories.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(analysis_jobs.router)
 api_router.include_router(repository_files.router)
+api_router.include_router(code_metrics.router)

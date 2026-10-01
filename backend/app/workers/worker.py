@@ -19,13 +19,20 @@ from arq.cron import cron
 from arq.worker import func
 
 from app.database import get_engine, get_sessionmaker
+from app.services.code_metrics import run_code_metrics_job
 from app.services.ingestion import run_ingestion_job
 from app.services.maintenance import (
     MAINTENANCE_INTERVAL_MINUTES,
     MAINTENANCE_TIMEOUT_SECONDS,
     maintenance_task,
 )
-from app.workers.queue import INGESTION_TASK, deserialize_job, redis_settings, serialize_job
+from app.workers.queue import (
+    CODE_METRICS_TASK,
+    INGESTION_TASK,
+    deserialize_job,
+    redis_settings,
+    serialize_job,
+)
 
 # Upper bound for one job (download total timeout is 300 s, plus extraction). A job that
 # exceeds it is cancelled by arq and later marked failed by maintenance (see module docstring).
@@ -44,6 +51,17 @@ async def ingest_repository(ctx: dict[str, Any], analysis_job_id: str) -> str:
         return await run_ingestion_job(db, job_id)
 
 
+async def analyze_code_metrics(ctx: dict[str, Any], analysis_job_id: str) -> str:
+    """Run one code-metrics job (payload: the AnalysisJob id only). Never raises for
+    analysis failures; they are recorded on the job."""
+    try:
+        job_id = uuid.UUID(str(analysis_job_id))
+    except ValueError:
+        return "invalid"
+    async with ctx["session_factory"]() as db:
+        return await run_code_metrics_job(db, job_id)
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     if "session_factory" not in ctx:
         ctx["session_factory"] = get_sessionmaker()
@@ -56,7 +74,10 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [func(ingest_repository, name=INGESTION_TASK)]
+    functions = [
+        func(ingest_repository, name=INGESTION_TASK),
+        func(analyze_code_metrics, name=CODE_METRICS_TASK),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = redis_settings()
