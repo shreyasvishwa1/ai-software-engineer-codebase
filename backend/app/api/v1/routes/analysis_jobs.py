@@ -11,8 +11,10 @@ from app.api.v1.routes.repositories import _get_owned_repository
 from app.database import get_db
 from app.models import AnalysisJob, Project, Repository, User
 from app.schemas.analysis_job import AnalysisJobResponse
+from app.services.job_cancellation import cancel_pending_ingestion_job
 
-# Read-only job inspection; every route requires an authenticated user.
+# Job inspection, plus cancelling a job that has not started yet; every route requires an
+# authenticated user.
 router = APIRouter(
     prefix="/projects/{project_id}/repositories/{repository_id}/jobs",
     tags=["analysis jobs"],
@@ -23,6 +25,7 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 JOB_NOT_FOUND = "Analysis job not found"
+NOT_CANCELLABLE = "Only pending jobs can be cancelled"
 
 
 def _owned_jobs(
@@ -71,4 +74,30 @@ async def get_job(
     )
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=JOB_NOT_FOUND)
+    return job
+
+
+@router.post("/{job_id}/cancel", response_model=AnalysisJobResponse)
+async def cancel_job(
+    project_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    job_id: uuid.UUID,
+    db: DbSession,
+    user: CurrentUser,
+) -> AnalysisJob:
+    """Cancel a pending job (it becomes failed with "Ingestion was cancelled"). Jobs that
+    are processing or finished are left unchanged (409)."""
+    owned = (
+        _owned_jobs(project_id, repository_id, user)
+        .where(AnalysisJob.id == job_id)
+        .execution_options(populate_existing=True)  # always the current row
+    )
+    if await db.scalar(owned) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=JOB_NOT_FOUND)
+    cancelled = await cancel_pending_ingestion_job(db, job_id)
+    job = await db.scalar(owned)
+    if job is None:  # deleted (e.g. with its repository) in the meantime
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=JOB_NOT_FOUND)
+    if not cancelled:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=NOT_CANCELLABLE)
     return job
