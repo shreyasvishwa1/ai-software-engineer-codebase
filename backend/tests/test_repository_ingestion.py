@@ -444,15 +444,15 @@ def _leftovers(data_dir: Path) -> list[str]:
     return sorted(found)
 
 
-async def _job_error(db: AsyncSession, repository_id: str) -> str | None:
-    """The latest ingestion job's error (asserting it failed)."""
+async def _job_error(db: AsyncSession, response: httpx.Response) -> str | None:
+    """The error of the job queued by ``response`` (asserting it failed).
+
+    Looked up by the returned job id: jobs created in one test transaction share their
+    timestamps, so "latest job" ordering would be ambiguous.
+    """
+    assert response.status_code == 202, response.text
     db.expire_all()
-    job = await db.scalar(
-        select(AnalysisJob)
-        .where(AnalysisJob.repository_id == uuid.UUID(repository_id))
-        .order_by(AnalysisJob.created_at.desc(), AnalysisJob.completed_at.desc())
-        .limit(1)
-    )
+    job = await db.get(AnalysisJob, uuid.UUID(response.json()["job_id"]))
     assert job is not None
     assert job.status == AnalysisJobStatus.FAILED
     return job.error_message
@@ -739,7 +739,7 @@ async def test_failed_ingestion_is_controlled_and_leaves_no_trace(
     data, detail = FAILING_ARCHIVES[case]
     response = await _ingest(client, alice, data)
     _assert_accepted(response, alice.repository_id)
-    error = await _job_error(db_session, alice.repository_id)
+    error = await _job_error(db_session, response)
     assert error == detail
     assert str(tmp_path) not in str(error) and "Traceback" not in str(error)
 
@@ -790,7 +790,7 @@ async def test_configured_limits_are_enforced(
     monkeypatch.setattr(get_settings(), "max_compression_ratio", 10_000)
     response = await _ingest(client, alice, _zip(archive, zipfile.ZIP_STORED))
     _assert_accepted(response, alice.repository_id)
-    assert await _job_error(db_session, alice.repository_id) == detail
+    assert await _job_error(db_session, response) == detail
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
     assert await _file_rows(db_session, alice.repository_id) == {}
     assert _leftovers(data_dir) == []
@@ -805,7 +805,7 @@ async def test_failed_reingestion_preserves_previous_files(
 
     response = await _ingest(client, alice, _zip_raw_names(["new.txt", "../../evil.txt"]))
     _assert_accepted(response, alice.repository_id)
-    assert await _job_error(db_session, alice.repository_id) == UNSAFE_PATH
+    assert await _job_error(db_session, response) == UNSAFE_PATH
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
     after = {p: f.sha256 for p, f in (await _file_rows(db_session, alice.repository_id)).items()}
     assert after == before  # no partial rows, previous rows intact
@@ -828,7 +828,7 @@ async def test_storage_swap_failure_is_controlled(
     monkeypatch.setattr(ingestion_service, "swap_into_place", failing_swap)
     response = await _ingest(client, alice, _zip(SAMPLE))
     _assert_accepted(response, alice.repository_id)
-    error = await _job_error(db_session, alice.repository_id)
+    error = await _job_error(db_session, response)
     assert error == "Repository storage could not be updated"
     assert str(tmp_path) not in str(error)
     assert await _status(db_session, alice.repository_id) == RepositoryStatus.FAILED
