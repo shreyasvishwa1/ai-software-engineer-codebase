@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FileTree } from '../components/FileTree'
+import { FileViewer } from '../components/FileViewer'
 import { IngestPanel } from '../components/IngestPanel'
 import { JobProgress } from '../components/JobProgress'
 import { LanguageStats } from '../components/LanguageStats'
@@ -21,6 +23,7 @@ export function RepositoryPage() {
   const repository = useRepository(projectId, repositoryId)
   const tree = useRepositoryTree(projectId, repositoryId)
   const languages = useRepositoryLanguages(projectId, repositoryId)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
 
   if (repository.isPending) {
     return <p className="text-sm text-slate-400">Loading repository…</p>
@@ -73,7 +76,13 @@ export function RepositoryPage() {
           {tree.isError && (
             <ErrorMessage message={getErrorMessage(tree.error, 'Could not load files')} />
           )}
-          {tree.data && <FileTree tree={tree.data.tree} />}
+          {tree.data && (
+            <FileTree
+              tree={tree.data.tree}
+              onSelectFile={setSelectedPath}
+              selectedPath={selectedPath}
+            />
+          )}
         </section>
         <section className={CARD} aria-label="Languages">
           <h2 className="mb-3 text-sm font-semibold text-slate-200">Languages</h2>
@@ -86,6 +95,11 @@ export function RepositoryPage() {
           {languages.data && <LanguageStats languages={languages.data.languages} />}
         </section>
       </div>
+
+      <section className={CARD} aria-label="File">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">File</h2>
+        <FileViewer projectId={projectId} repositoryId={repositoryId} selectedPath={selectedPath} />
+      </section>
     </div>
   )
 }

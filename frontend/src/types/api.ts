@@ -93,6 +93,15 @@ export interface RepositoryTree {
   tree: TreeDirectory
 }
 
+export interface FileContent {
+  path: string
+  language: string | null
+  size_bytes: number
+  /** null when the file cannot be shown as text; see reason */
+  content: string | null
+  reason: 'binary' | 'too_large' | null
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number
