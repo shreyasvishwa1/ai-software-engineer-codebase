@@ -54,6 +54,7 @@ from app.services.github import (
     download_archive,
     parse_github_repository_url,
 )
+from app.services.languages import detect_language
 from app.workers import queue
 
 # Returns the archive to ingest; called after the repository has been claimed.
@@ -326,6 +327,7 @@ async def _run_pipeline(
                 path=f.path,
                 name=f.name,
                 extension=f.extension,
+                language=detect_language(f.name, f.extension),
                 size_bytes=f.size_bytes,
                 sha256=f.sha256,
             )

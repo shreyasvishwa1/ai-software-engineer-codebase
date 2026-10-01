@@ -583,7 +583,9 @@ async def test_valid_zip_ingestion_registers_files(
         assert row.name == path.rsplit("/", 1)[-1]
         assert row.size_bytes == len(data)
         assert row.sha256 == hashlib.sha256(data).hexdigest()
-        assert row.language is None  # language detection is out of scope
+        assert row.language == {
+            "src/main.py": "Python", "src/utils/helper.py": "Python", "README.md": "Markdown"
+        }[path]
     assert rows["src/main.py"].extension == "py"
     assert rows["README.md"].extension == "md"
     assert str(data_dir) not in "".join(rows)  # no absolute machine paths stored

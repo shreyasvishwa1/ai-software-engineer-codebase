@@ -6,7 +6,15 @@ so routes registered here are served at ``/api/v1/...``.
 
 from fastapi import APIRouter
 
-from app.api.v1.routes import analysis_jobs, auth, health, ingestion, projects, repositories
+from app.api.v1.routes import (
+    analysis_jobs,
+    auth,
+    health,
+    ingestion,
+    projects,
+    repositories,
+    repository_files,
+)
 
 api_router = APIRouter(prefix="/v1")
 api_router.include_router(health.router)
@@ -15,3 +23,4 @@ api_router.include_router(projects.router)
 api_router.include_router(repositories.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(analysis_jobs.router)
+api_router.include_router(repository_files.router)
