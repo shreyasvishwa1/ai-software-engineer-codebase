@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
+from app.services.rate_limit import RateLimit, client_ip
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -39,7 +40,10 @@ def _invalid_credentials() -> HTTPException:
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: DbSession) -> User:
+async def register(
+    body: RegisterRequest, db: DbSession, request: Request, limiter: RateLimit
+) -> User:
+    await limiter.check_register_ip(client_ip(request))  # every attempt counts
     password = body.password.get_secret_value()
     if len(password) < MIN_PASSWORD_LENGTH:
         raise HTTPException(
@@ -65,15 +69,22 @@ async def register(body: RegisterRequest, db: DbSession) -> User:
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: DbSession) -> TokenResponse:
-    password = body.password.get_secret_value()
-    user = await db.scalar(select(User).where(User.email == body.email))
-    if user is None:
-        verify_password(password, dummy_password_hash())  # similar timing for unknown emails
-        raise _invalid_credentials()
-    if not verify_password(password, user.password_hash):
-        raise _invalid_credentials()
-    return TokenResponse(access_token=create_access_token(user.id))
+async def login(
+    body: LoginRequest, db: DbSession, request: Request, limiter: RateLimit
+) -> TokenResponse:
+    # Rate limits are checked before any database lookup or password hashing.
+    await limiter.check_login_ip(client_ip(request))
+    async with limiter.login_attempt(body.email) as attempt:
+        password = body.password.get_secret_value()
+        user = await db.scalar(select(User).where(User.email == body.email))
+        if user is None:
+            verify_password(password, dummy_password_hash())  # similar timing for unknown emails
+            attempt.failed()
+            raise _invalid_credentials()
+        if not verify_password(password, user.password_hash):
+            attempt.failed()
+            raise _invalid_credentials()
+        return TokenResponse(access_token=create_access_token(user.id))
 
 
 @router.get("/me", response_model=UserResponse)
