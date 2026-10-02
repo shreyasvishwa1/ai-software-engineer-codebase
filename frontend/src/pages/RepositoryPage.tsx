@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { CodeMetricsPanel } from '../components/CodeMetricsPanel'
@@ -26,6 +26,7 @@ export function RepositoryPage() {
   const tree = useRepositoryTree(projectId, repositoryId)
   const languages = useRepositoryLanguages(projectId, repositoryId)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const fileCard = useRef<HTMLElement>(null)
 
   if (repository.isPending) {
     return <p className="text-sm text-slate-400">Loading repository…</p>
@@ -36,6 +37,15 @@ export function RepositoryPage() {
     )
   }
   const repo = repository.data
+
+  /** Selection from an analysis panel: open the file and bring the viewer into view. */
+  const selectFromPanel = (path: string) => {
+    setSelectedPath(path)
+    const card = fileCard.current
+    if (card && typeof card.scrollIntoView === 'function') {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -104,15 +114,20 @@ export function RepositoryPage() {
           projectId={projectId}
           repositoryId={repositoryId}
           repositoryStatus={repo.status}
+          onSelectFile={selectFromPanel}
         />
       </section>
 
       <section className={CARD} aria-label="Dependencies">
         <h2 className="mb-3 text-sm font-semibold text-slate-200">Dependencies</h2>
-        <DependenciesPanel projectId={projectId} repositoryId={repositoryId} />
+        <DependenciesPanel
+          projectId={projectId}
+          repositoryId={repositoryId}
+          onSelectFile={selectFromPanel}
+        />
       </section>
 
-      <section className={CARD} aria-label="File">
+      <section className={CARD} aria-label="File" ref={fileCard}>
         <h2 className="mb-3 text-sm font-semibold text-slate-200">File</h2>
         <FileViewer projectId={projectId} repositoryId={repositoryId} selectedPath={selectedPath} />
       </section>

@@ -35,8 +35,25 @@ function count(manifest: DependencyManifest): string {
 }
 
 /** One manifest; its dependency table is rendered only while expanded. */
-function ManifestRow({ manifest }: { manifest: DependencyManifest }) {
+function ManifestRow({
+  manifest,
+  onSelectFile,
+}: {
+  manifest: DependencyManifest
+  onSelectFile?: (path: string) => void
+}) {
   const [open, setOpen] = useState(false)
+  // Separate from the expand toggle (never nested in it); opens the file in the viewer.
+  const viewButton = onSelectFile && (
+    <button
+      type="button"
+      aria-label={`Open ${manifest.path} in the viewer`}
+      onClick={() => onSelectFile(manifest.path)}
+      className="shrink-0 rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-800"
+    >
+      View file
+    </button>
+  )
   const details = (
     <>
       <span className="break-all font-mono text-xs text-slate-200">{manifest.path}</span>
@@ -48,24 +65,37 @@ function ManifestRow({ manifest }: { manifest: DependencyManifest }) {
   if (manifest.status !== 'parsed') {
     return (
       <li className="space-y-1 py-1">
-        <div className="flex flex-wrap items-center gap-2 px-1">{details}</div>
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          {details}
+          {viewButton}
+        </div>
         <p className="px-1 text-xs text-slate-500">{STATUS_MESSAGES[manifest.status]}</p>
       </li>
     )
   }
+  const toggle = (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={() => setOpen((value) => !value)}
+      className="flex w-full flex-wrap items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-slate-800"
+    >
+      <span aria-hidden="true" className="text-slate-400">
+        {open ? '▾' : '▸'}
+      </span>
+      {details}
+    </button>
+  )
   return (
     <li className="py-1">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full flex-wrap items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-slate-800"
-      >
-        <span aria-hidden="true" className="text-slate-400">
-          {open ? '▾' : '▸'}
-        </span>
-        {details}
-      </button>
+      {viewButton ? (
+        <div className="flex items-center gap-2">
+          {toggle}
+          {viewButton}
+        </div>
+      ) : (
+        toggle
+      )}
       {open && (
         <table className="ml-5 mt-1 w-[calc(100%-1.25rem)] text-xs" aria-label={`Dependencies of ${manifest.path}`}>
           <thead>
@@ -91,7 +121,16 @@ function ManifestRow({ manifest }: { manifest: DependencyManifest }) {
 }
 
 /** Dependencies declared in the repository's manifests. All server values are plain text. */
-export function DependenciesPanel({ projectId, repositoryId }: { projectId: string; repositoryId: string }) {
+export function DependenciesPanel({
+  projectId,
+  repositoryId,
+  onSelectFile,
+}: {
+  projectId: string
+  repositoryId: string
+  /** When given, every manifest gets a "View file" button that opens it in the viewer. */
+  onSelectFile?: (path: string) => void
+}) {
   const inventory = useDependencies(projectId, repositoryId)
   if (inventory.isPending) {
     return <p className={NOTE}>Loading dependencies…</p>
@@ -120,7 +159,7 @@ export function DependenciesPanel({ projectId, repositoryId }: { projectId: stri
       {truncated && <p className={NOTE}>{TRUNCATED_NOTICE}</p>}
       <ul className="divide-y divide-slate-800" aria-label="Manifests">
         {manifests.map((manifest) => (
-          <ManifestRow key={manifest.path} manifest={manifest} />
+          <ManifestRow key={manifest.path} manifest={manifest} onSelectFile={onSelectFile} />
         ))}
       </ul>
     </div>

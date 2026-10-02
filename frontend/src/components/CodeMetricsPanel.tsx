@@ -34,10 +34,17 @@ interface CodeMetricsPanelProps {
   projectId: string
   repositoryId: string
   repositoryStatus: RepositoryStatus
+  /** When given, largest-file paths become buttons that open the file in the viewer. */
+  onSelectFile?: (path: string) => void
 }
 
 /** Start a code-metrics analysis and show the results for the repository's current files. */
-export function CodeMetricsPanel({ projectId, repositoryId, repositoryStatus }: CodeMetricsPanelProps) {
+export function CodeMetricsPanel({
+  projectId,
+  repositoryId,
+  repositoryStatus,
+  onSelectFile,
+}: CodeMetricsPanelProps) {
   const metrics = useCodeMetrics(projectId, repositoryId)
   const start = useStartCodeMetrics(projectId, repositoryId)
   const job = metrics.data?.job ?? null
@@ -75,7 +82,11 @@ export function CodeMetricsPanel({ projectId, repositoryId, repositoryStatus }: 
             <ErrorMessage message={job.error_message} />
           )}
           {metrics.data.summary ? (
-            <Results summary={metrics.data.summary} files={metrics.data.files} />
+            <Results
+              summary={metrics.data.summary}
+              files={metrics.data.files}
+              onSelectFile={onSelectFile}
+            />
           ) : (
             !active && (
               <p className={NOTE}>{job ? 'Run the analysis for the current files.' : 'No analysis yet.'}</p>
@@ -87,7 +98,15 @@ export function CodeMetricsPanel({ projectId, repositoryId, repositoryStatus }: 
   )
 }
 
-function Results({ summary, files }: { summary: CodeMetricsSummary; files: FileMetric[] }) {
+function Results({
+  summary,
+  files,
+  onSelectFile,
+}: {
+  summary: CodeMetricsSummary
+  files: FileMetric[]
+  onSelectFile?: (path: string) => void
+}) {
   const largest = largestFiles(files)
   return (
     <div className="space-y-4">
@@ -116,7 +135,20 @@ function Results({ summary, files }: { summary: CodeMetricsSummary; files: FileM
           <tbody>
             {largest.map((file) => (
               <tr key={file.path} className="border-t border-slate-800">
-                <td className="break-all py-1 font-mono text-xs text-slate-200">{file.path}</td>
+                <td className="break-all py-1 font-mono text-xs text-slate-200">
+                  {onSelectFile ? (
+                    <button
+                      type="button"
+                      aria-label={`Open ${file.path} in the viewer`}
+                      onClick={() => onSelectFile(file.path)}
+                      className="break-all text-left text-indigo-300 hover:underline"
+                    >
+                      {file.path}
+                    </button>
+                  ) : (
+                    file.path
+                  )}
+                </td>
                 <td className="py-1 text-xs text-slate-400">{file.language ?? 'Unknown'}</td>
                 <td className="py-1 text-right text-slate-200">{file.line_count}</td>
                 <td className="py-1 text-right text-slate-400">{file.blank_line_count}</td>
