@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { CodeMetricsPanel } from '../components/CodeMetricsPanel'
+import { CodeSearchPanel } from '../components/CodeSearchPanel'
 import { DependenciesPanel } from '../components/DependenciesPanel'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FileTree } from '../components/FileTree'
@@ -108,6 +109,15 @@ export function RepositoryPage() {
           {languages.data && <LanguageStats languages={languages.data.languages} />}
         </section>
       </div>
+
+      <section className={CARD} aria-label="Search">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">Search</h2>
+        <CodeSearchPanel
+          projectId={projectId}
+          repositoryId={repositoryId}
+          onSelectFile={selectFromPanel}
+        />
+      </section>
 
       <section className={CARD} aria-label="Code metrics">
         <h2 className="mb-3 text-sm font-semibold text-slate-200">Code metrics</h2>

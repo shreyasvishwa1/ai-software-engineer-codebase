@@ -213,6 +213,31 @@ export interface SecretScan {
   truncated: boolean
 }
 
+/** One matching line from the server's literal, case-insensitive search. */
+export interface CodeSearchMatch {
+  /** POSIX path relative to the repository root */
+  path: string
+  /** 1-based */
+  line: number
+  /** at most 200 characters of the matching line; untrusted, render as text only */
+  preview: string
+}
+
+export interface CodeSearchSummary {
+  files_scanned: number
+  /** includes content that is not valid UTF-8 */
+  binary: number
+  too_large: number
+  unavailable: number
+  matches: number
+}
+
+export interface CodeSearchResult {
+  matches: CodeSearchMatch[]
+  summary: CodeSearchSummary
+  truncated: boolean
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number
