@@ -138,6 +138,15 @@ export interface CodeMetricsJob {
   status: AnalysisJobStatus
 }
 
+export interface FileExplanation {
+  path: string
+  /** plain text from the model; untrusted, render as text only */
+  explanation: string
+  model: string
+  input_tokens: number | null
+  output_tokens: number | null
+}
+
 export type ManifestStatus = 'parsed' | 'invalid' | 'too_large' | 'unavailable'
 
 export interface DependencyEntry {

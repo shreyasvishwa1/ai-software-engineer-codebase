@@ -4,6 +4,7 @@ import { useFileContent } from '../hooks/useFileContent'
 import { getErrorMessage } from '../services/client'
 import { formatBytes } from '../utils/format'
 import { ErrorMessage } from './ErrorMessage'
+import { FileExplanation } from './FileExplanation'
 
 interface FileViewerProps {
   projectId: string
@@ -55,9 +56,18 @@ export function FileViewer({ projectId, repositoryId, selectedPath }: FileViewer
     body = <p className={NOTE}>This file is empty.</p>
   } else {
     body = (
-      <pre className="max-h-[32rem] overflow-auto rounded-lg bg-slate-950 p-3 text-xs leading-5 text-slate-200">
-        <code>{data.content}</code>
-      </pre>
+      <>
+        {/* Keyed by path: switching files always starts a fresh explanation. */}
+        <FileExplanation
+          key={data.path}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+        />
+        <pre className="max-h-[32rem] overflow-auto rounded-lg bg-slate-950 p-3 text-xs leading-5 text-slate-200">
+          <code>{data.content}</code>
+        </pre>
+      </>
     )
   }
   return (
