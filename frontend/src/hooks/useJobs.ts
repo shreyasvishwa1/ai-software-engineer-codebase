@@ -33,6 +33,7 @@ export function useJobs(
         queryKeys.languages(projectId, repositoryId),
         queryKeys.jobs(projectId, repositoryId),
         queryKeys.codeMetrics(projectId, repositoryId),
+        queryKeys.dependencies(projectId, repositoryId),
       ]) {
         void queryClient.invalidateQueries({ queryKey: key, exact: true })
       }

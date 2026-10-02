@@ -138,6 +138,38 @@ export interface CodeMetricsJob {
   status: AnalysisJobStatus
 }
 
+export type ManifestStatus = 'parsed' | 'invalid' | 'too_large' | 'unavailable'
+
+export interface DependencyEntry {
+  name: string
+  /** extras, version constraints and markers exactly as written */
+  specifier: string
+  /** runtime | dev | peer | optional | optional:<group> */
+  scope: string
+}
+
+export interface DependencyManifest {
+  path: string
+  ecosystem: 'npm' | 'python'
+  status: ManifestStatus
+  dependencies: DependencyEntry[]
+}
+
+export interface DependencySummary {
+  manifests: number
+  parsed: number
+  invalid: number
+  too_large: number
+  unavailable: number
+  dependencies: number
+}
+
+export interface DependencyInventory {
+  manifests: DependencyManifest[]
+  summary: DependencySummary
+  truncated: boolean
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number

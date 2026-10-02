@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { CodeMetricsPanel } from '../components/CodeMetricsPanel'
+import { DependenciesPanel } from '../components/DependenciesPanel'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FileTree } from '../components/FileTree'
 import { FileViewer } from '../components/FileViewer'
@@ -104,6 +105,11 @@ export function RepositoryPage() {
           repositoryId={repositoryId}
           repositoryStatus={repo.status}
         />
+      </section>
+
+      <section className={CARD} aria-label="Dependencies">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">Dependencies</h2>
+        <DependenciesPanel projectId={projectId} repositoryId={repositoryId} />
       </section>
 
       <section className={CARD} aria-label="File">
