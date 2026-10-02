@@ -18,9 +18,10 @@ Production-quality AI-powered developer platform to understand, analyze and expl
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt -c constraints.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
+`constraints.txt` pins every backend package to the verified versions; regenerate and review it deliberately whenever dependency versions are intentionally changed.
 - Health: http://127.0.0.1:8000/health
 - Docs: http://127.0.0.1:8000/docs
 
