@@ -1,9 +1,15 @@
 import { useJobs } from '../hooks/useJobs'
 import { getErrorMessage } from '../services/client'
+import type { AnalysisJobType } from '../types/api'
 import { formatDateTime } from '../utils/format'
 import { JOB_POLL_INTERVAL_MS } from '../utils/jobs'
 import { ErrorMessage } from './ErrorMessage'
 import { StatusBadge } from './StatusBadge'
+
+const JOB_TYPE_LABELS: Record<AnalysisJobType, string> = {
+  ingestion: 'Ingestion',
+  code_metrics: 'Code analysis',
+}
 
 interface JobProgressProps {
   projectId: string
@@ -31,6 +37,9 @@ export function JobProgress({
     <section className="space-y-3" aria-label="Ingestion progress">
       <div className="flex items-center gap-3">
         <h2 className="text-sm font-semibold text-slate-200">Latest job</h2>
+        <span className="text-xs text-slate-400" data-testid="job-type">
+          {JOB_TYPE_LABELS[latest.job_type] ?? latest.job_type}
+        </span>
         <StatusBadge status={latest.status} />
         <span className="text-xs text-slate-400" data-testid="job-progress">
           {latest.progress}%
@@ -48,6 +57,7 @@ export function JobProgress({
           {older.slice(0, 5).map((job) => (
             <li key={job.id} className="flex items-center gap-2">
               <StatusBadge status={job.status} />
+              <span>{JOB_TYPE_LABELS[job.job_type] ?? job.job_type}</span>
               <span>{formatDateTime(job.created_at)}</span>
               {job.error_message && <span className="text-red-300">{job.error_message}</span>}
             </li>

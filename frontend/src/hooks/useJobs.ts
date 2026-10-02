@@ -7,7 +7,8 @@ import { queryKeys } from './queryKeys'
 
 /**
  * The repository's jobs, polled only while the latest job is pending or processing. When a
- * job finishes (completed or failed), the repository, tree, languages and jobs are refreshed.
+ * job finishes (completed or failed), the repository, tree, languages, jobs and code metrics
+ * are refreshed.
  */
 export function useJobs(
   projectId: string,
@@ -31,6 +32,7 @@ export function useJobs(
         queryKeys.tree(projectId, repositoryId),
         queryKeys.languages(projectId, repositoryId),
         queryKeys.jobs(projectId, repositoryId),
+        queryKeys.codeMetrics(projectId, repositoryId),
       ]) {
         void queryClient.invalidateQueries({ queryKey: key, exact: true })
       }

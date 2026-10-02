@@ -13,4 +13,6 @@ export const queryKeys = {
     ['projects', projectId, 'repositories', repositoryId, 'jobs'] as const,
   fileContent: (projectId: string, repositoryId: string, path: string) =>
     ['projects', projectId, 'repositories', repositoryId, 'file-content', path] as const,
+  codeMetrics: (projectId: string, repositoryId: string) =>
+    ['projects', projectId, 'repositories', repositoryId, 'code-metrics'] as const,
 }

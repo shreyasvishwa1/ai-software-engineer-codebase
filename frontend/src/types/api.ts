@@ -3,6 +3,7 @@
 export type RepositoryStatus = 'pending' | 'processing' | 'ready' | 'failed'
 export type RepositorySourceType = 'zip' | 'github'
 export type AnalysisJobStatus = 'pending' | 'processing' | 'completed' | 'failed'
+export type AnalysisJobType = 'ingestion' | 'code_metrics'
 
 export interface User {
   id: string
@@ -52,7 +53,7 @@ export interface AnalysisJob {
   id: string
   project_id: string
   repository_id: string
-  job_type: 'ingestion'
+  job_type: AnalysisJobType
   status: AnalysisJobStatus
   progress: number
   error_message: string | null
@@ -100,6 +101,41 @@ export interface FileContent {
   /** null when the file cannot be shown as text; see reason */
   content: string | null
   reason: 'binary' | 'too_large' | null
+}
+
+export type FileMetricStatus = 'analyzed' | 'binary' | 'too_large' | 'unavailable'
+
+export interface FileMetric {
+  path: string
+  language: string | null
+  status: FileMetricStatus
+  /** set only for analyzed files */
+  line_count: number | null
+  blank_line_count: number | null
+}
+
+export interface CodeMetricsSummary {
+  files: number
+  analyzed: number
+  binary: number
+  too_large: number
+  unavailable: number
+  total_lines: number
+  blank_lines: number
+}
+
+export interface CodeMetrics {
+  /** the latest code-metrics job, if any */
+  job: AnalysisJob | null
+  /** null until the current snapshot is analyzed */
+  summary: CodeMetricsSummary | null
+  files: FileMetric[]
+}
+
+export interface CodeMetricsJob {
+  job_id: string
+  repository_id: string
+  status: AnalysisJobStatus
 }
 
 export interface LanguageStatistic {

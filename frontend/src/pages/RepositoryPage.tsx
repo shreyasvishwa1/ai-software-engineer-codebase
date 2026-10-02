@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import { CodeMetricsPanel } from '../components/CodeMetricsPanel'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FileTree } from '../components/FileTree'
 import { FileViewer } from '../components/FileViewer'
@@ -95,6 +96,15 @@ export function RepositoryPage() {
           {languages.data && <LanguageStats languages={languages.data.languages} />}
         </section>
       </div>
+
+      <section className={CARD} aria-label="Code metrics">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">Code metrics</h2>
+        <CodeMetricsPanel
+          projectId={projectId}
+          repositoryId={repositoryId}
+          repositoryStatus={repo.status}
+        />
+      </section>
 
       <section className={CARD} aria-label="File">
         <h2 className="mb-3 text-sm font-semibold text-slate-200">File</h2>
