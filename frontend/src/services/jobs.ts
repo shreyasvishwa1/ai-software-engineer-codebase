@@ -9,3 +9,15 @@ export async function listJobs(projectId: string, repositoryId: string): Promise
   )
   return data
 }
+
+/** Cancel a pending job; returns the updated job. The server decides (409 when not pending). */
+export async function cancelJob(
+  projectId: string,
+  repositoryId: string,
+  jobId: string,
+): Promise<AnalysisJob> {
+  const { data } = await apiClient.post<AnalysisJob>(
+    `${repositoryPath(projectId, repositoryId)}/jobs/${encodeURIComponent(jobId)}/cancel`,
+  )
+  return data
+}
