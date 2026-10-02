@@ -27,11 +27,14 @@ export function CodeSearchPanel({
   projectId,
   repositoryId,
   onSelectFile,
+  onSelectLine,
 }: {
   projectId: string
   repositoryId: string
   /** When given, every result gets a "View file" button that opens it in the viewer. */
   onSelectFile?: (path: string) => void
+  /** When given too, "View file" opens the result's line instead (used in place of onSelectFile). */
+  onSelectLine?: (path: string, line: number) => void
 }) {
   const search = useCodeSearch(projectId, repositoryId)
   const [query, setQuery] = useState('')
@@ -121,7 +124,7 @@ export function CodeSearchPanel({
                           <button
                             type="button"
                             aria-label={`Open ${match.path} in the viewer (line ${match.line})`}
-                            onClick={() => onSelectFile(match.path)}
+                            onClick={() => (onSelectLine ? onSelectLine(match.path, match.line) : onSelectFile(match.path))}
                             className="shrink-0 whitespace-nowrap rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-800"
                           >
                             View file

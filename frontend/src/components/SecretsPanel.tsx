@@ -26,11 +26,14 @@ export function SecretsPanel({
   projectId,
   repositoryId,
   onSelectFile,
+  onSelectLine,
 }: {
   projectId: string
   repositoryId: string
   /** When given, every finding gets a "View file" button that opens it in the viewer. */
   onSelectFile?: (path: string) => void
+  /** When given too, "View file" opens the finding's line instead (used in place of onSelectFile). */
+  onSelectLine?: (path: string, line: number) => void
 }) {
   const scan = useSecretScan(projectId, repositoryId)
   if (scan.isPending) {
@@ -89,7 +92,7 @@ export function SecretsPanel({
                     <button
                       type="button"
                       aria-label={`Open ${finding.path} in the viewer (line ${finding.line}, ${finding.description})`}
-                      onClick={() => onSelectFile(finding.path)}
+                      onClick={() => (onSelectLine ? onSelectLine(finding.path, finding.line) : onSelectFile(finding.path))}
                       className="shrink-0 rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-800"
                     >
                       View file

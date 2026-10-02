@@ -6,7 +6,7 @@ import { CodeSearchPanel } from '../components/CodeSearchPanel'
 import { DependenciesPanel } from '../components/DependenciesPanel'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FileTree } from '../components/FileTree'
-import { FileViewer } from '../components/FileViewer'
+import { FileViewer, type LineSelection } from '../components/FileViewer'
 import { IngestPanel } from '../components/IngestPanel'
 import { JobProgress } from '../components/JobProgress'
 import { LanguageStats } from '../components/LanguageStats'
@@ -28,6 +28,8 @@ export function RepositoryPage() {
   const tree = useRepositoryTree(projectId, repositoryId)
   const languages = useRepositoryLanguages(projectId, repositoryId)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  // A fresh object per selection, so choosing the same line again scrolls to it again.
+  const [selectedLine, setSelectedLine] = useState<LineSelection | null>(null)
   const fileCard = useRef<HTMLElement>(null)
 
   if (repository.isPending) {
@@ -40,13 +42,26 @@ export function RepositoryPage() {
   }
   const repo = repository.data
 
+  /** Selection from the tree: open the file without a line and without scrolling. */
+  const selectFromTree = (path: string) => {
+    setSelectedPath(path)
+    setSelectedLine(null)
+  }
+
   /** Selection from an analysis panel: open the file and bring the viewer into view. */
   const selectFromPanel = (path: string) => {
     setSelectedPath(path)
+    setSelectedLine(null)
     const card = fileCard.current
     if (card && typeof card.scrollIntoView === 'function') {
       card.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
+  }
+
+  /** Selection of a reported line (Search, Secrets): open the file at that line. */
+  const selectLineFromPanel = (path: string, line: number) => {
+    selectFromPanel(path)
+    setSelectedLine({ line })
   }
 
   return (
@@ -93,7 +108,7 @@ export function RepositoryPage() {
           {tree.data && (
             <FileTree
               tree={tree.data.tree}
-              onSelectFile={setSelectedPath}
+              onSelectFile={selectFromTree}
               selectedPath={selectedPath}
             />
           )}
@@ -116,6 +131,7 @@ export function RepositoryPage() {
           projectId={projectId}
           repositoryId={repositoryId}
           onSelectFile={selectFromPanel}
+          onSelectLine={selectLineFromPanel}
         />
       </section>
 
@@ -144,12 +160,18 @@ export function RepositoryPage() {
           projectId={projectId}
           repositoryId={repositoryId}
           onSelectFile={selectFromPanel}
+          onSelectLine={selectLineFromPanel}
         />
       </section>
 
       <section className={CARD} aria-label="File" ref={fileCard}>
         <h2 className="mb-3 text-sm font-semibold text-slate-200">File</h2>
-        <FileViewer projectId={projectId} repositoryId={repositoryId} selectedPath={selectedPath} />
+        <FileViewer
+          projectId={projectId}
+          repositoryId={repositoryId}
+          selectedPath={selectedPath}
+          selectedLine={selectedLine}
+        />
       </section>
     </div>
   )
