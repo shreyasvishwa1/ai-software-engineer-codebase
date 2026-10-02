@@ -9,6 +9,7 @@ import { FileViewer } from '../components/FileViewer'
 import { IngestPanel } from '../components/IngestPanel'
 import { JobProgress } from '../components/JobProgress'
 import { LanguageStats } from '../components/LanguageStats'
+import { SecretsPanel } from '../components/SecretsPanel'
 import { StatusBadge } from '../components/StatusBadge'
 import {
   useRepository,
@@ -121,6 +122,15 @@ export function RepositoryPage() {
       <section className={CARD} aria-label="Dependencies">
         <h2 className="mb-3 text-sm font-semibold text-slate-200">Dependencies</h2>
         <DependenciesPanel
+          projectId={projectId}
+          repositoryId={repositoryId}
+          onSelectFile={selectFromPanel}
+        />
+      </section>
+
+      <section className={CARD} aria-label="Secrets">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">Secrets</h2>
+        <SecretsPanel
           projectId={projectId}
           repositoryId={repositoryId}
           onSelectFile={selectFromPanel}

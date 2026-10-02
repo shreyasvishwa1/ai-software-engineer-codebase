@@ -179,6 +179,40 @@ export interface DependencyInventory {
   truncated: boolean
 }
 
+export type SecretRule =
+  | 'aws-access-key-id'
+  | 'github-token'
+  | 'slack-token'
+  | 'stripe-live-key'
+  | 'google-api-key'
+  | 'anthropic-api-key'
+  | 'private-key'
+
+/** Location of a likely secret; the server never sends the matched value. */
+export interface SecretFinding {
+  /** POSIX path relative to the repository root */
+  path: string
+  /** 1-based */
+  line: number
+  rule: SecretRule
+  description: string
+}
+
+export interface SecretScanSummary {
+  files_scanned: number
+  /** includes content that is not valid UTF-8 */
+  binary: number
+  too_large: number
+  unavailable: number
+  findings: number
+}
+
+export interface SecretScan {
+  findings: SecretFinding[]
+  summary: SecretScanSummary
+  truncated: boolean
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number

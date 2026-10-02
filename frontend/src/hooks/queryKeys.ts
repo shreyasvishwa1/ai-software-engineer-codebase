@@ -17,4 +17,6 @@ export const queryKeys = {
     ['projects', projectId, 'repositories', repositoryId, 'code-metrics'] as const,
   dependencies: (projectId: string, repositoryId: string) =>
     ['projects', projectId, 'repositories', repositoryId, 'dependencies'] as const,
+  secretScan: (projectId: string, repositoryId: string) =>
+    ['projects', projectId, 'repositories', repositoryId, 'secret-scan'] as const,
 }
