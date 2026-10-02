@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     analysis_jobs,
     auth,
     code_metrics,
+    code_search,
     dependencies,
     file_explanation,
     health,
@@ -32,3 +33,4 @@ api_router.include_router(code_metrics.router)
 api_router.include_router(dependencies.router)
 api_router.include_router(file_explanation.router)
 api_router.include_router(secret_scan.router)
+api_router.include_router(code_search.router)
