@@ -6,6 +6,7 @@ import { getErrorMessage } from '../services/client'
 import { formatBytes } from '../utils/format'
 import { ErrorMessage } from './ErrorMessage'
 import { FileExplanation } from './FileExplanation'
+import { FileImporters } from './FileImporters'
 import { FileImports } from './FileImports'
 import { FileOutline } from './FileOutline'
 
@@ -130,6 +131,15 @@ export function FileViewer({
         {/* Keyed by path as well: another file never shows this file's imports. */}
         <FileImports
           key={`imports:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          onSelectFile={onSelectFile}
+        />
+        {/* Keyed by path too: another file never shows this file's importers. */}
+        <FileImporters
+          key={`importers:${data.path}`}
           projectId={projectId}
           repositoryId={repositoryId}
           path={data.path}

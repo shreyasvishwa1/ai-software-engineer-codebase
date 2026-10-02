@@ -287,6 +287,32 @@ export interface CodeImports {
   truncated: boolean
 }
 
+/** One statement of an importer that resolves to the target (Step 39 fields, no targets). */
+export type ImporterImport = Omit<ImportEntry, 'targets'>
+
+/** A Python file whose imports resolve to the target file (server-sorted by path). */
+export interface Importer {
+  path: string
+  /** in source order, at most 20 */
+  imports: ImporterImport[]
+}
+
+export interface ImportersSummary {
+  files_scanned: number
+  too_large: number
+  binary: number
+  syntax_error: number
+}
+
+export interface CodeImporters {
+  path: string
+  status: 'scanned' | 'unsupported_language'
+  /** empty unless status is 'scanned' */
+  importers: Importer[]
+  summary: ImportersSummary
+  truncated: boolean
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number
