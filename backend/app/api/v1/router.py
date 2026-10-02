@@ -17,6 +17,7 @@ from app.api.v1.routes import (
     projects,
     repositories,
     repository_files,
+    secret_scan,
 )
 
 api_router = APIRouter(prefix="/v1")
@@ -30,3 +31,4 @@ api_router.include_router(repository_files.router)
 api_router.include_router(code_metrics.router)
 api_router.include_router(dependencies.router)
 api_router.include_router(file_explanation.router)
+api_router.include_router(secret_scan.router)
