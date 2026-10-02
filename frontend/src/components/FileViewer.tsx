@@ -6,6 +6,7 @@ import { getErrorMessage } from '../services/client'
 import { formatBytes } from '../utils/format'
 import { ErrorMessage } from './ErrorMessage'
 import { FileExplanation } from './FileExplanation'
+import { FileImports } from './FileImports'
 import { FileOutline } from './FileOutline'
 
 /** A line to highlight; a new object for every selection. */
@@ -21,6 +22,8 @@ interface FileViewerProps {
   selectedLine?: LineSelection | null
   /** Selects a line of the open file (used by the outline). */
   onSelectLine?: (path: string, line: number) => void
+  /** Opens another repository file (used by the imports' targets). */
+  onSelectFile?: (path: string) => void
 }
 
 const NOTE = 'text-sm text-slate-400'
@@ -53,6 +56,7 @@ export function FileViewer({
   selectedPath,
   selectedLine = null,
   onSelectLine,
+  onSelectFile,
 }: FileViewerProps) {
   const file = useFileContent(projectId, repositoryId, selectedPath)
   const preRef = useRef<HTMLPreElement>(null)
@@ -122,6 +126,15 @@ export function FileViewer({
           path={data.path}
           language={data.language}
           onSelectLine={onSelectLine}
+        />
+        {/* Keyed by path as well: another file never shows this file's imports. */}
+        <FileImports
+          key={`imports:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          onSelectFile={onSelectFile}
         />
         {pieces && <p className={NOTE}>{`Showing line ${line}`}</p>}
         {valid && !pieces && <p className={NOTE}>{`Line ${line} is not in this file.`}</p>}

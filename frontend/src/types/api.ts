@@ -265,6 +265,28 @@ export interface CodeOutline {
   truncated: boolean
 }
 
+/** One import statement of a Python file, as resolved by the server (authoritative). */
+export interface ImportEntry {
+  line: number
+  statement: 'import' | 'from'
+  /** "from" module as written; null for "import" and "from . import" */
+  module: string | null
+  /** leading dots of a relative import; 0 = absolute */
+  level: number
+  names: string[]
+  /** matching repository paths, sorted by the server (at most 5) */
+  targets: string[]
+  resolution: 'resolved' | 'ambiguous' | 'not_found'
+}
+
+export interface CodeImports {
+  path: string
+  status: OutlineStatus
+  /** empty unless status is 'parsed' */
+  imports: ImportEntry[]
+  truncated: boolean
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number

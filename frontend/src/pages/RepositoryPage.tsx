@@ -178,6 +178,7 @@ export function RepositoryPage() {
           selectedPath={selectedPath}
           selectedLine={selectedLine}
           onSelectLine={selectLineInFile}
+          onSelectFile={selectFromPanel}
         />
       </section>
     </div>
