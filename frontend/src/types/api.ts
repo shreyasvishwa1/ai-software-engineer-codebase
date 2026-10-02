@@ -238,6 +238,33 @@ export interface CodeSearchResult {
   truncated: boolean
 }
 
+export type OutlineStatus =
+  | 'parsed'
+  | 'syntax_error'
+  | 'too_large'
+  | 'binary'
+  | 'unsupported_language'
+
+/** One class, function or method of a Python file; the name is untrusted text. */
+export interface OutlineSymbol {
+  kind: 'class' | 'function' | 'method'
+  async: boolean
+  name: string
+  /** 1-based line of the class/def statement */
+  line: number
+  end_line: number
+  /** 0 = top level */
+  depth: number
+}
+
+export interface CodeOutline {
+  path: string
+  status: OutlineStatus
+  /** empty unless status is 'parsed' */
+  symbols: OutlineSymbol[]
+  truncated: boolean
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number

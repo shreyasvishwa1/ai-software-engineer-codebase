@@ -58,6 +58,12 @@ export function RepositoryPage() {
     }
   }
 
+  /** Selection of a line within the open file (outline): highlight it without moving the page. */
+  const selectLineInFile = (path: string, line: number) => {
+    setSelectedPath(path)
+    setSelectedLine({ line })
+  }
+
   /** Selection of a reported line (Search, Secrets): open the file at that line. */
   const selectLineFromPanel = (path: string, line: number) => {
     selectFromPanel(path)
@@ -171,6 +177,7 @@ export function RepositoryPage() {
           repositoryId={repositoryId}
           selectedPath={selectedPath}
           selectedLine={selectedLine}
+          onSelectLine={selectLineInFile}
         />
       </section>
     </div>

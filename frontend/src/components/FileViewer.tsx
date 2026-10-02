@@ -6,6 +6,7 @@ import { getErrorMessage } from '../services/client'
 import { formatBytes } from '../utils/format'
 import { ErrorMessage } from './ErrorMessage'
 import { FileExplanation } from './FileExplanation'
+import { FileOutline } from './FileOutline'
 
 /** A line to highlight; a new object for every selection. */
 export interface LineSelection {
@@ -18,6 +19,8 @@ interface FileViewerProps {
   selectedPath: string | null
   /** 1-based line reported by an analysis panel; ignored unless a positive integer. */
   selectedLine?: LineSelection | null
+  /** Selects a line of the open file (used by the outline). */
+  onSelectLine?: (path: string, line: number) => void
 }
 
 const NOTE = 'text-sm text-slate-400'
@@ -49,6 +52,7 @@ export function FileViewer({
   repositoryId,
   selectedPath,
   selectedLine = null,
+  onSelectLine,
 }: FileViewerProps) {
   const file = useFileContent(projectId, repositoryId, selectedPath)
   const preRef = useRef<HTMLPreElement>(null)
@@ -109,6 +113,15 @@ export function FileViewer({
           projectId={projectId}
           repositoryId={repositoryId}
           path={data.path}
+        />
+        {/* Keyed by path too: another file never shows this file's outline. */}
+        <FileOutline
+          key={`outline:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          onSelectLine={onSelectLine}
         />
         {pieces && <p className={NOTE}>{`Showing line ${line}`}</p>}
         {valid && !pieces && <p className={NOTE}>{`Line ${line} is not in this file.`}</p>}
