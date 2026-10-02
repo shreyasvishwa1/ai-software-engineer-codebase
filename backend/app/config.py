@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # Relative paths are resolved against the repository root, not the working directory.
     data_dir: Path = REPO_ROOT / "data"
 
+    # AI file explanations (Claude). Unset or empty disables the feature; never logged.
+    anthropic_api_key: SecretStr | None = None
+    llm_model: str = "claude-opus-5-5"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -138,6 +142,21 @@ class Settings(BaseSettings):
         ):
             raise ValueError("must be redis://[user:password@]host[:port][/db] (or rediss://)")
         return value
+
+    @field_validator("anthropic_api_key")
+    @classmethod
+    def _empty_api_key_disables(cls, value: SecretStr | None) -> SecretStr | None:
+        # ANTHROPIC_API_KEY= (empty, as in .env.example) means "not configured".
+        if value is None or not value.get_secret_value().strip():
+            return None
+        return value
+
+    @field_validator("llm_model")
+    @classmethod
+    def _validate_llm_model(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value.strip()
 
     @field_validator("data_dir")
     @classmethod

@@ -25,6 +25,9 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 - Health: http://127.0.0.1:8000/health
 - Docs: http://127.0.0.1:8000/docs
 
+#### AI file explanations (optional)
+Set `ANTHROPIC_API_KEY` in `backend/.env` to enable `POST .../files/explain`; without a key the feature is disabled (503). When an explanation is requested, the verified content of that file (up to 64 KiB) is sent to Anthropic's API, so review Anthropic's applicable data-retention and privacy terms before enabling it. Requests always go to `https://api.anthropic.com` (`ANTHROPIC_BASE_URL` is ignored); operator-defined `ANTHROPIC_CUSTOM_HEADERS`, if set, are added by the SDK and never logged or returned.
+
 ### Frontend
 ```powershell
 cd frontend

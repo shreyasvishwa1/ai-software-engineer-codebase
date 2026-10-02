@@ -11,6 +11,7 @@ from app.api.v1.routes import (
     auth,
     code_metrics,
     dependencies,
+    file_explanation,
     health,
     ingestion,
     projects,
@@ -28,3 +29,4 @@ api_router.include_router(analysis_jobs.router)
 api_router.include_router(repository_files.router)
 api_router.include_router(code_metrics.router)
 api_router.include_router(dependencies.router)
+api_router.include_router(file_explanation.router)

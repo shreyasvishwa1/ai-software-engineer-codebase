@@ -65,6 +65,7 @@ def test_openapi_generation(client: TestClient) -> None:
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/content",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/analysis/code-metrics",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/analysis/dependencies",
+        "/api/v1/projects/{project_id}/repositories/{repository_id}/files/explain",
     }
 
 
