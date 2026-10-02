@@ -140,6 +140,19 @@ def _cap(text: str) -> tuple[str, bool]:
     return text[:MAX_TEXT_CHARS], len(text) > MAX_TEXT_CHARS
 
 
+def import_statements(tree: ast.AST) -> tuple[list[ast.Import | ast.ImportFrom], bool]:
+    """Every import statement of ``tree`` (nested ones included) in source order, at most
+    MAX_IMPORTS, and whether more existed. Shared by forward and reverse resolution."""
+    # ast.walk is iterative; every import statement, nested ones included.
+    nodes = sorted(
+        (n for n in ast.walk(tree) if isinstance(n, ast.Import | ast.ImportFrom)),
+        key=lambda n: (n.lineno, n.col_offset),
+    )
+    if len(nodes) > MAX_IMPORTS:
+        return nodes[:MAX_IMPORTS], True
+    return nodes, False
+
+
 def analyze_imports(
     source: str, importer: str, python_paths: Sequence[str]
 ) -> tuple[OutlineStatus, list[ImportEntry], bool]:
@@ -152,13 +165,8 @@ def analyze_imports(
 
     truncated = len(python_paths) > MAX_INDEXED_PATHS
     index = ModuleIndex.build(python_paths[:MAX_INDEXED_PATHS])
-    # ast.walk is iterative; every import statement, nested ones included.
-    nodes = sorted(
-        (n for n in ast.walk(tree) if isinstance(n, ast.Import | ast.ImportFrom)),
-        key=lambda n: (n.lineno, n.col_offset),
-    )
-    if len(nodes) > MAX_IMPORTS:
-        nodes, truncated = nodes[:MAX_IMPORTS], True
+    nodes, more = import_statements(tree)
+    truncated = truncated or more
 
     imports: list[ImportEntry] = []
     for node in nodes:
