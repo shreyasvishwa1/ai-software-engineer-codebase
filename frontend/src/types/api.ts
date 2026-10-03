@@ -389,3 +389,49 @@ export interface CodeDefinitionResult {
   definitions: DefinitionLocation[]
   truncated: boolean
 }
+
+/** Step 47 find-references outcome; every status except 'scanned' describes the target. */
+export type ReferencesStatus =
+  | 'scanned'
+  | 'not_a_definition'
+  | 'unsupported_target'
+  | 'syntax_error'
+  | 'too_large'
+  | 'binary'
+  | 'unsupported_language'
+
+/** One location that statically refers to the target definition. */
+export interface ReferenceLocation {
+  path: string
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the identifier's first character */
+  column: number
+  name: string
+  context: 'name' | 'attribute' | 'import'
+  /** go-to-definition here also returns other definitions */
+  ambiguous: boolean
+}
+
+export interface ReferencesSummary {
+  files_scanned: number
+  too_large: number
+  binary: number
+  syntax_error: number
+  /** counted before the server's reference cap */
+  references: number
+  /** counted before the server's reference cap */
+  ambiguous: number
+  unsupported: number
+}
+
+export interface CodeReferencesResult {
+  status: ReferencesStatus
+  /** null unless scanned or unsupported_target */
+  target: DefinitionLocation | null
+  /** server order (path, line, column); empty unless scanned */
+  references: ReferenceLocation[]
+  /** all zero unless scanned */
+  summary: ReferencesSummary
+  truncated: boolean
+}

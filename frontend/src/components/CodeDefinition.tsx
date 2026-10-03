@@ -4,6 +4,7 @@ import { useCodeDefinition } from '../hooks/useCodeDefinition'
 import { getErrorMessage } from '../services/client'
 import type { CodePosition } from '../services/codeDefinition'
 import type { DefinitionLocation, DefinitionStatus } from '../types/api'
+import { CodeReferences } from './CodeReferences'
 import { ErrorMessage } from './ErrorMessage'
 
 const NOTE = 'text-sm text-slate-400'
@@ -124,6 +125,8 @@ export function CodeDefinition({
 }: CodeDefinitionProps) {
   const definition = useCodeDefinition(projectId, repositoryId)
   const [noPosition, setNoPosition] = useState(false)
+  // One references panel per lookup: every new lookup remounts it with a fresh request state.
+  const [lookup, setLookup] = useState(0)
   if (language !== 'Python') {
     return null
   }
@@ -135,6 +138,7 @@ export function CodeDefinition({
       return
     }
     setNoPosition(false)
+    setLookup((current) => current + 1)
     definition.mutate({ path, position: positionAt(content, offset) })
   }
 
@@ -184,6 +188,14 @@ export function CodeDefinition({
           </ul>
         </>
       )}
+      {/* Always rendered (nothing without a found result), so only its key resets it. */}
+      <CodeReferences
+        key={lookup}
+        projectId={projectId}
+        repositoryId={repositoryId}
+        definitions={result && found ? result.definitions : null}
+        onSelectLine={onSelectLine}
+      />
     </section>
   )
 }
