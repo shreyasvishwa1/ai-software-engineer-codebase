@@ -22,6 +22,7 @@ from app.api.v1.routes import (
     repositories,
     repository_files,
     secret_scan,
+    symbol_search,
 )
 
 api_router = APIRouter(prefix="/v1")
@@ -40,3 +41,4 @@ api_router.include_router(code_search.router)
 api_router.include_router(code_outline.router)
 api_router.include_router(code_imports.router)
 api_router.include_router(code_importers.router)
+api_router.include_router(symbol_search.router)
