@@ -348,3 +348,44 @@ export interface RepositoryLanguages {
 export interface Health {
   status: string
 }
+
+/** Step 45 go-to-definition outcome for one position of a Python file. */
+export type DefinitionStatus =
+  | 'resolved'
+  | 'ambiguous'
+  | 'not_found'
+  | 'unsupported'
+  | 'no_identifier'
+  | 'syntax_error'
+  | 'too_large'
+  | 'binary'
+  | 'unsupported_language'
+
+/** The identifier found at the requested position. */
+export interface DefinitionReference {
+  path: string
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the identifier's first character */
+  column: number
+  name: string
+}
+
+/** One definition the identifier resolves to. */
+export interface DefinitionLocation {
+  path: string
+  kind: 'class' | 'function' | 'method' | 'module'
+  name: string
+  /** 1-based line of the class/def statement (1 for modules) */
+  line: number
+  end_line: number
+}
+
+export interface CodeDefinitionResult {
+  status: DefinitionStatus
+  /** null unless an identifier was found */
+  reference: DefinitionReference | null
+  /** server order (by path, then line); empty unless resolved or ambiguous */
+  definitions: DefinitionLocation[]
+  truncated: boolean
+}

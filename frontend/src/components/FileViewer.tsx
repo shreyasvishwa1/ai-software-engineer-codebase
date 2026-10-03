@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { useFileContent } from '../hooks/useFileContent'
 import { getErrorMessage } from '../services/client'
 import { formatBytes } from '../utils/format'
+import { CodeDefinition, selectionOffset } from './CodeDefinition'
 import { ErrorMessage } from './ErrorMessage'
 import { FileExplanation } from './FileExplanation'
 import { FileImporters } from './FileImporters'
@@ -21,7 +22,7 @@ interface FileViewerProps {
   selectedPath: string | null
   /** 1-based line reported by an analysis panel; ignored unless a positive integer. */
   selectedLine?: LineSelection | null
-  /** Selects a line of the open file (used by the outline). */
+  /** Selects a line of a file (used by the outline and go-to-definition). */
   onSelectLine?: (path: string, line: number) => void
   /** Opens another repository file (used by the imports' targets). */
   onSelectFile?: (path: string) => void
@@ -145,6 +146,17 @@ export function FileViewer({
           path={data.path}
           language={data.language}
           onSelectFile={onSelectFile}
+        />
+        {/* Keyed by path too: another file never shows this file's definition. */}
+        <CodeDefinition
+          key={`definition:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          content={data.content}
+          getOffset={() => (preRef.current ? selectionOffset(preRef.current) : null)}
+          onSelectLine={onSelectLine}
         />
         {pieces && <p className={NOTE}>{`Showing line ${line}`}</p>}
         {valid && !pieces && <p className={NOTE}>{`Line ${line} is not in this file.`}</p>}
