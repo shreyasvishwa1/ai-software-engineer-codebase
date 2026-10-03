@@ -14,6 +14,7 @@ from app.api.v1.routes import (
     code_imports,
     code_metrics,
     code_outline,
+    code_references,
     code_search,
     dependencies,
     file_explanation,
@@ -44,3 +45,4 @@ api_router.include_router(code_imports.router)
 api_router.include_router(code_importers.router)
 api_router.include_router(symbol_search.router)
 api_router.include_router(code_definition.router)
+api_router.include_router(code_references.router)
