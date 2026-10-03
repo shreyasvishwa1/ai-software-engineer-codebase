@@ -313,6 +313,23 @@ export interface CodeImporters {
   truncated: boolean
 }
 
+/** One Python definition (Step 37 symbol fields) and its file. */
+export type SymbolMatch = OutlineSymbol & { path: string }
+
+export interface SymbolSearchSummary {
+  files_scanned: number
+  too_large: number
+  binary: number
+  syntax_error: number
+}
+
+export interface SymbolSearchResult {
+  /** server order: by path, then source order */
+  results: SymbolMatch[]
+  summary: SymbolSearchSummary
+  truncated: boolean
+}
+
 export interface LanguageStatistic {
   language: string | null
   file_count: number

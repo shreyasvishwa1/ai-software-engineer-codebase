@@ -12,6 +12,7 @@ import { JobProgress } from '../components/JobProgress'
 import { LanguageStats } from '../components/LanguageStats'
 import { SecretsPanel } from '../components/SecretsPanel'
 import { StatusBadge } from '../components/StatusBadge'
+import { SymbolSearchPanel } from '../components/SymbolSearchPanel'
 import {
   useRepository,
   useRepositoryLanguages,
@@ -137,6 +138,15 @@ export function RepositoryPage() {
           projectId={projectId}
           repositoryId={repositoryId}
           onSelectFile={selectFromPanel}
+          onSelectLine={selectLineFromPanel}
+        />
+      </section>
+
+      <section className={CARD} aria-label="Symbols">
+        <h2 className="mb-3 text-sm font-semibold text-slate-200">Symbols</h2>
+        <SymbolSearchPanel
+          projectId={projectId}
+          repositoryId={repositoryId}
           onSelectLine={selectLineFromPanel}
         />
       </section>
