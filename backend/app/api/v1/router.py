@@ -19,6 +19,7 @@ from app.api.v1.routes import (
     code_references,
     code_search,
     code_type_hierarchy,
+    code_unbound_names,
     dependencies,
     file_explanation,
     health,
@@ -52,3 +53,4 @@ api_router.include_router(code_references.router)
 api_router.include_router(code_call_hierarchy.router)
 api_router.include_router(code_type_hierarchy.router)
 api_router.include_router(code_method_overrides.router)
+api_router.include_router(code_unbound_names.router)
