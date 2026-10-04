@@ -602,3 +602,83 @@ export interface TypeHierarchyResult {
   /** null exactly when subclasses is null */
   subclasses_truncated: boolean | null
 }
+
+/** Step 53 method-overrides outcome; every status except 'scanned' describes the target file. */
+export type MethodOverridesStatus =
+  | 'scanned'
+  | 'not_a_definition'
+  | 'not_a_method'
+  | 'syntax_error'
+  | 'too_large'
+  | 'binary'
+  | 'unsupported_language'
+
+/** 'unsupported_target': the method's class is nested in a class; its subclasses are not searched. */
+export type OverridingStatus = 'scanned' | 'unsupported_target'
+
+/** Whether a related class's own body defines the method (decorators are never interpreted). */
+export type MemberStatus = 'defined' | 'not_defined' | 'not_a_method' | 'unsupported' | 'unavailable'
+
+/** One direct base's class candidate, judged for the method. */
+export interface OverriddenEntry {
+  /** a position in the response target's file; null for a dynamic base */
+  site: BaseSite | null
+  base_kind: BaseKind
+  /** one class candidate of the base (the JSON key is "class"); null exactly when unavailable */
+  class: DefinitionLocation | null
+  /** the base resolves to several definitions */
+  ambiguous: boolean
+  status: MemberStatus
+  /** the class's same-name methods, server order (cut at 20); empty unless defined */
+  implementations: DefinitionLocation[]
+  /** the class defines the name more than once (counted before the cut) */
+  implementations_ambiguous: boolean
+}
+
+/** One direct subclass entry whose own body binds the method's name. */
+export interface OverridingEntry {
+  subclass: DefinitionLocation
+  /** a position in subclass.path */
+  site: SubclassSite
+  status: 'defined' | 'not_a_method' | 'unsupported'
+  implementations: DefinitionLocation[]
+  implementations_ambiguous: boolean
+}
+
+export interface MethodOverridesSummary {
+  files_scanned: number
+  too_large: number
+  binary: number
+  syntax_error: number
+  bases: number
+  base_classes: number
+  overridden_defined: number
+  overridden_not_defined: number
+  overridden_not_a_method: number
+  overridden_unavailable: number
+  overridden_unsupported: number
+  subclasses: number
+  overriding: number
+  /** subclass entries not binding the name: counted, never listed */
+  inheriting: number
+  overriding_not_a_method: number
+  overriding_unsupported: number
+}
+
+export interface MethodOverridesResult {
+  status: MethodOverridesStatus
+  /** the method; null unless scanned */
+  target: DefinitionLocation | null
+  /** the method's class; null unless scanned */
+  owner: DefinitionLocation | null
+  /** server order (base order, then candidate order); empty unless scanned */
+  overridden: OverriddenEntry[]
+  /** null unless scanned */
+  overriding_status: OverridingStatus | null
+  /** server order with duplicates; null unless subclasses were searched */
+  overriding: OverridingEntry[] | null
+  summary: MethodOverridesSummary
+  overridden_truncated: boolean
+  /** null exactly when overriding is null */
+  overriding_truncated: boolean | null
+}
