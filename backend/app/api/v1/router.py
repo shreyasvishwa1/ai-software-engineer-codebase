@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     analysis_jobs,
     auth,
+    code_call_hierarchy,
     code_definition,
     code_importers,
     code_imports,
@@ -46,3 +47,4 @@ api_router.include_router(code_importers.router)
 api_router.include_router(symbol_search.router)
 api_router.include_router(code_definition.router)
 api_router.include_router(code_references.router)
+api_router.include_router(code_call_hierarchy.router)
