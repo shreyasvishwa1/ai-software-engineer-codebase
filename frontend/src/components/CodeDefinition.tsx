@@ -6,6 +6,7 @@ import type { CodePosition } from '../services/codeDefinition'
 import type { DefinitionLocation, DefinitionStatus } from '../types/api'
 import { CodeCallHierarchy } from './CodeCallHierarchy'
 import { CodeReferences } from './CodeReferences'
+import { CodeTypeHierarchy } from './CodeTypeHierarchy'
 import { ErrorMessage } from './ErrorMessage'
 
 const NOTE = 'text-sm text-slate-400'
@@ -200,6 +201,14 @@ export function CodeDefinition({
       {/* Keyed like the references panel: every new lookup starts it fresh. */}
       <CodeCallHierarchy
         key={`calls:${lookup}`}
+        projectId={projectId}
+        repositoryId={repositoryId}
+        definitions={result && found ? result.definitions : null}
+        onSelectLine={onSelectLine}
+      />
+      {/* Keyed like the other panels: every new lookup starts it fresh. */}
+      <CodeTypeHierarchy
+        key={`types:${lookup}`}
         projectId={projectId}
         repositoryId={repositoryId}
         definitions={result && found ? result.definitions : null}

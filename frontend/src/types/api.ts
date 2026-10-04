@@ -511,3 +511,94 @@ export interface CallHierarchyResult {
   callers_truncated: boolean | null
   callees_truncated: boolean
 }
+
+/** Step 51 type-hierarchy outcome; every status except 'scanned' describes the target file. */
+export type TypeHierarchyStatus =
+  | 'scanned'
+  | 'not_a_definition'
+  | 'not_a_class'
+  | 'syntax_error'
+  | 'too_large'
+  | 'binary'
+  | 'unsupported_language'
+
+/** 'unsupported_target': a class nested in a class, whose subclasses are not searched. */
+export type SubclassesStatus = 'scanned' | 'unsupported_target'
+
+export type BaseKind =
+  | 'resolved'
+  | 'ambiguous'
+  | 'not_a_class'
+  | 'builtin'
+  | 'unsupported'
+  | 'unresolved'
+  | 'dynamic'
+
+/** A base expression's position. It has no path of its own: it is in the target's file. */
+export interface BaseSite {
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the base name */
+  column: number
+  name: string
+}
+
+export interface BaseEntry {
+  /** null exactly when the kind is dynamic */
+  site: BaseSite | null
+  kind: BaseKind
+  /** server order; empty unless resolved, ambiguous or not_a_class */
+  definitions: DefinitionLocation[]
+}
+
+/** Where a subclass names the target. It has no path of its own: it is in subclass.path. */
+export interface SubclassSite {
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the base name */
+  column: number
+  name: string
+  /** go-to-definition here also returns other definitions */
+  ambiguous: boolean
+}
+
+export interface SubclassEntry {
+  subclass: DefinitionLocation
+  site: SubclassSite
+}
+
+export interface TypeHierarchySummary {
+  files_scanned: number
+  too_large: number
+  binary: number
+  syntax_error: number
+  bases: number
+  bases_resolved: number
+  bases_ambiguous: number
+  bases_builtin: number
+  bases_unresolved: number
+  bases_unsupported: number
+  bases_dynamic: number
+  bases_not_a_class: number
+  keyword_arguments: number
+  subclasses: number
+  subclasses_ambiguous: number
+  subclass_unsupported: number
+  non_base_references: number
+}
+
+export interface TypeHierarchyResult {
+  status: TypeHierarchyStatus
+  /** null unless scanned */
+  target: DefinitionLocation | null
+  /** server order, duplicates kept; empty unless scanned */
+  bases: BaseEntry[]
+  /** null unless scanned */
+  subclasses_status: SubclassesStatus | null
+  /** server order; null unless subclasses were searched */
+  subclasses: SubclassEntry[] | null
+  summary: TypeHierarchySummary
+  bases_truncated: boolean
+  /** null exactly when subclasses is null */
+  subclasses_truncated: boolean | null
+}
