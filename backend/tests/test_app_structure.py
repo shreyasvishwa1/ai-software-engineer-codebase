@@ -76,6 +76,7 @@ def test_openapi_generation(client: TestClient) -> None:
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/references",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/call-hierarchy",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/type-hierarchy",
+        "/api/v1/projects/{project_id}/repositories/{repository_id}/files/method-overrides",
     }
 
 

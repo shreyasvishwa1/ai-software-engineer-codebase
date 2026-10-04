@@ -13,6 +13,7 @@ from app.api.v1.routes import (
     code_definition,
     code_importers,
     code_imports,
+    code_method_overrides,
     code_metrics,
     code_outline,
     code_references,
@@ -50,3 +51,4 @@ api_router.include_router(code_definition.router)
 api_router.include_router(code_references.router)
 api_router.include_router(code_call_hierarchy.router)
 api_router.include_router(code_type_hierarchy.router)
+api_router.include_router(code_method_overrides.router)
