@@ -435,3 +435,79 @@ export interface CodeReferencesResult {
   summary: ReferencesSummary
   truncated: boolean
 }
+
+/** Step 49 call-hierarchy outcome; every status except 'scanned' describes the target file. */
+export type CallHierarchyStatus =
+  | 'scanned'
+  | 'not_a_definition'
+  | 'syntax_error'
+  | 'too_large'
+  | 'binary'
+  | 'unsupported_language'
+
+/** 'unsupported_target': a method or nested class, whose callers are not searched. */
+export type CallersStatus = 'scanned' | 'unsupported_target'
+
+/**
+ * One call. It has no path of its own: a caller group's calls are positions in caller.path,
+ * a callee group's calls are positions in the response target's file (target.path).
+ */
+export interface CallSite {
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the called name */
+  column: number
+  name: string
+  /** go-to-definition here also returns other definitions */
+  ambiguous: boolean
+}
+
+export interface CallerGroup {
+  /** the def, class body or module making the calls */
+  caller: DefinitionLocation
+  /** before the response caps */
+  total_calls: number
+  calls: CallSite[]
+}
+
+export interface CalleeGroup {
+  /** a called class, function or method */
+  callee: DefinitionLocation
+  /** before the response caps */
+  total_calls: number
+  calls: CallSite[]
+}
+
+export interface CallHierarchySummary {
+  files_scanned: number
+  too_large: number
+  binary: number
+  syntax_error: number
+  caller_calls: number
+  caller_ambiguous: number
+  caller_unsupported: number
+  non_call_references: number
+  callee_calls: number
+  callee_ambiguous: number
+  callee_unsupported: number
+  callee_builtin: number
+  callee_unresolved: number
+  callee_not_callable: number
+  callee_dynamic: number
+}
+
+export interface CallHierarchyResult {
+  status: CallHierarchyStatus
+  /** null unless scanned */
+  target: DefinitionLocation | null
+  /** null unless scanned */
+  callers_status: CallersStatus | null
+  /** server order; null unless callers were searched */
+  callers: CallerGroup[] | null
+  /** server order; empty unless scanned */
+  callees: CalleeGroup[]
+  summary: CallHierarchySummary
+  /** null exactly when callers is null */
+  callers_truncated: boolean | null
+  callees_truncated: boolean
+}

@@ -4,6 +4,7 @@ import { useCodeDefinition } from '../hooks/useCodeDefinition'
 import { getErrorMessage } from '../services/client'
 import type { CodePosition } from '../services/codeDefinition'
 import type { DefinitionLocation, DefinitionStatus } from '../types/api'
+import { CodeCallHierarchy } from './CodeCallHierarchy'
 import { CodeReferences } from './CodeReferences'
 import { ErrorMessage } from './ErrorMessage'
 
@@ -191,6 +192,14 @@ export function CodeDefinition({
       {/* Always rendered (nothing without a found result), so only its key resets it. */}
       <CodeReferences
         key={lookup}
+        projectId={projectId}
+        repositoryId={repositoryId}
+        definitions={result && found ? result.definitions : null}
+        onSelectLine={onSelectLine}
+      />
+      {/* Keyed like the references panel: every new lookup starts it fresh. */}
+      <CodeCallHierarchy
+        key={`calls:${lookup}`}
         projectId={projectId}
         repositoryId={repositoryId}
         definitions={result && found ? result.definitions : null}
