@@ -682,3 +682,36 @@ export interface MethodOverridesResult {
   /** null exactly when overriding is null */
   overriding_truncated: boolean | null
 }
+
+/**
+ * Step 55: one identifier load of a Python file with no statically known binding, as found by
+ * the server. Not a runtime error: names defined dynamically (exec, globals()) are listed,
+ * names that may come from a star import are only counted.
+ */
+export interface UnboundName {
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the identifier (shown, never used for navigation) */
+  column: number
+  /** the identifier as Python sees it (NFKC); untrusted text */
+  name: string
+}
+
+/** The server's counts, taken before its 500-result cap (authoritative, never recounted). */
+export interface UnboundNamesSummary {
+  unbound: number
+  distinct: number
+  /** would-be-unbound loads in a module with a star import (never listed) */
+  unsupported: number
+  /** loads of interpreter-provided names such as __file__ (never listed) */
+  implicit: number
+}
+
+export interface UnboundNamesResult {
+  path: string
+  status: OutlineStatus
+  /** source order, every occurrence; empty unless status is 'parsed' */
+  names: UnboundName[]
+  summary: UnboundNamesSummary
+  truncated: boolean
+}

@@ -10,6 +10,7 @@ import { FileExplanation } from './FileExplanation'
 import { FileImporters } from './FileImporters'
 import { FileImports } from './FileImports'
 import { FileOutline } from './FileOutline'
+import { FileUnboundNames } from './FileUnboundNames'
 
 /** A line to highlight; a new object for every selection. */
 export interface LineSelection {
@@ -146,6 +147,15 @@ export function FileViewer({
           path={data.path}
           language={data.language}
           onSelectFile={onSelectFile}
+        />
+        {/* Keyed by path too: another file never shows this file's unbound names. */}
+        <FileUnboundNames
+          key={`unbound:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          onSelectLine={onSelectLine}
         />
         {/* Keyed by path too: another file never shows this file's definition. */}
         <CodeDefinition
