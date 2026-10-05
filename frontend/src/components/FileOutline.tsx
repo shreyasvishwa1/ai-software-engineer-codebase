@@ -1,6 +1,12 @@
+import { useRef, useState } from 'react'
+
 import { useCodeOutline } from '../hooks/useCodeOutline'
 import { getErrorMessage } from '../services/client'
-import type { OutlineStatus, OutlineSymbol } from '../types/api'
+import type { DefinitionLocation, OutlineStatus, OutlineSymbol } from '../types/api'
+import { CodeCallHierarchy } from './CodeCallHierarchy'
+import { CodeMethodOverrides } from './CodeMethodOverrides'
+import { CodeReferences } from './CodeReferences'
+import { CodeTypeHierarchy } from './CodeTypeHierarchy'
 import { ErrorMessage } from './ErrorMessage'
 
 const NOTE = 'text-sm text-slate-400'
@@ -15,6 +21,18 @@ export const STATUS_MESSAGES: Record<Exclude<OutlineStatus, 'parsed'>, string> =
   unsupported_language: 'The outline is only available for Python files.',
 }
 const MAX_INDENT = 8
+/** The outline kinds the existing definition analyses accept as targets. */
+const ANALYZABLE_KINDS: ReadonlySet<string> = new Set(['class', 'function', 'method'])
+
+/** One click on an outline symbol: the analysis context of that symbol. */
+interface SymbolSelection {
+  /** A new token for every click, so even the same symbol starts a fresh context. */
+  generation: number
+  /** The symbol's position in the outline response. */
+  index: number
+  /** The symbol as a definition of the outline response's (canonical) file. */
+  target: DefinitionLocation
+}
 
 interface FileOutlineProps {
   projectId: string
@@ -51,7 +69,9 @@ function SymbolLabel({ symbol }: { symbol: OutlineSymbol }) {
 /**
  * On-demand outline of the displayed Python file. Nothing is requested until the button is
  * clicked; the component is keyed by path, so another file always starts fresh. Every
- * server value is rendered as plain text.
+ * server value is rendered as plain text. Clicking a symbol selects its line and opens the
+ * existing definition analyses for it below the list; each still requests only when its own
+ * button is clicked, and every click (and every new outline) starts a fresh context.
  */
 export function FileOutline({
   projectId,
@@ -61,6 +81,8 @@ export function FileOutline({
   onSelectLine,
 }: FileOutlineProps) {
   const outline = useCodeOutline(projectId, repositoryId)
+  const [selection, setSelection] = useState<SymbolSelection | null>(null)
+  const clicks = useRef(0)
   if (language !== 'Python') {
     return null
   }
@@ -69,12 +91,37 @@ export function FileOutline({
     result && result.status !== 'parsed'
       ? (STATUS_MESSAGES[result.status as keyof typeof STATUS_MESSAGES] ?? UNKNOWN_STATUS)
       : null
+
+  /** A clicked symbol of the outline at `outlinePath`: analyzable kinds only, else nothing. */
+  const select = (index: number, symbol: OutlineSymbol, outlinePath: string) => {
+    clicks.current += 1
+    setSelection(
+      ANALYZABLE_KINDS.has(symbol.kind)
+        ? {
+            generation: clicks.current,
+            index,
+            target: {
+              path: outlinePath,
+              kind: symbol.kind,
+              name: symbol.name,
+              line: symbol.line,
+              end_line: symbol.end_line,
+            },
+          }
+        : null,
+    )
+  }
+
   return (
     <section className="space-y-2 rounded-lg border border-slate-800 p-3" aria-label="File outline">
       <button
         type="button"
         disabled={outline.isPending}
-        onClick={() => outline.mutate(path)}
+        onClick={() => {
+          // A new outline replaces the symbols: no analysis context survives the request.
+          setSelection(null)
+          outline.mutate(path)
+        }}
         className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {outline.isPending ? 'Loading outline…' : result ? 'Refresh outline' : 'Show outline'}
@@ -101,7 +148,10 @@ export function FileOutline({
                     <button
                       type="button"
                       aria-label={`Go to ${symbol.kind} ${symbol.name} (line ${symbol.line})`}
-                      onClick={() => onSelectLine(path, symbol.line)}
+                      onClick={() => {
+                        onSelectLine(path, symbol.line)
+                        select(index, symbol, result.path)
+                      }}
                       className="flex w-full flex-wrap items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-slate-800"
                     >
                       <SymbolLabel symbol={symbol} />
@@ -116,6 +166,43 @@ export function FileOutline({
             </ul>
           )}
         </>
+      )}
+      {selection && result?.status === 'parsed' && (
+        // Keyed per click: every selection, even of the same symbol, mounts fresh panels.
+        <section
+          key={`${selection.generation}:${selection.index}:${selection.target.line}:${selection.target.kind}`}
+          className="space-y-2 border-t border-slate-800 pt-2"
+          aria-label="Symbol analyses"
+        >
+          <p className={NOTE} data-testid="symbol-analyses-subject">
+            {`Analyses for ${selection.target.kind} ${selection.target.name} (line ${selection.target.line})`}
+          </p>
+          {/* The existing panels, unchanged: each filters by kind and requests on its own click. */}
+          <CodeReferences
+            projectId={projectId}
+            repositoryId={repositoryId}
+            definitions={[selection.target]}
+            onSelectLine={onSelectLine}
+          />
+          <CodeCallHierarchy
+            projectId={projectId}
+            repositoryId={repositoryId}
+            definitions={[selection.target]}
+            onSelectLine={onSelectLine}
+          />
+          <CodeTypeHierarchy
+            projectId={projectId}
+            repositoryId={repositoryId}
+            definitions={[selection.target]}
+            onSelectLine={onSelectLine}
+          />
+          <CodeMethodOverrides
+            projectId={projectId}
+            repositoryId={repositoryId}
+            definitions={[selection.target]}
+            onSelectLine={onSelectLine}
+          />
+        </section>
       )}
     </section>
   )
