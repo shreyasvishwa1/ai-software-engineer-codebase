@@ -828,6 +828,7 @@ describe('Name occurrences in the file viewer', () => {
       'File imports',
       'File importers',
       'Unbound names',
+      'Unused variables',
       'Go to definition',
       'Name occurrences',
     ])

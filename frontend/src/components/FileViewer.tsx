@@ -12,6 +12,7 @@ import { FileImporters } from './FileImporters'
 import { FileImports } from './FileImports'
 import { FileOutline } from './FileOutline'
 import { FileUnboundNames } from './FileUnboundNames'
+import { FileUnusedVariables } from './FileUnusedVariables'
 
 /** A line to highlight; a new object for every selection. */
 export interface LineSelection {
@@ -152,6 +153,15 @@ export function FileViewer({
         {/* Keyed by path too: another file never shows this file's unbound names. */}
         <FileUnboundNames
           key={`unbound:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          onSelectLine={onSelectLine}
+        />
+        {/* Keyed by path too: another file never shows this file's unused variables. */}
+        <FileUnusedVariables
+          key={`unused:${data.path}`}
           projectId={projectId}
           repositoryId={repositoryId}
           path={data.path}

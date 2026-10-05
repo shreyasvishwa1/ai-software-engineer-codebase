@@ -762,3 +762,35 @@ export interface CodeOccurrencesResult {
   summary: OccurrencesSummary
   truncated: boolean
 }
+
+/**
+ * Step 60: one assignment to a def/async def local variable that nothing in the file reads, as
+ * found by the server (variable-level "never read anywhere", not a data-flow analysis).
+ */
+export interface UnusedVariable {
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the assigned name (shown, never used for navigation) */
+  column: number
+  /** the identifier as Python sees it (NFKC); untrusted text */
+  name: string
+}
+
+/** The server's counts, taken before its 500-entry cap (authoritative, never recounted). */
+export interface UnusedVariablesSummary {
+  /** listed assignments */
+  unused: number
+  /** distinct listed variables: (function scope, name) */
+  distinct: number
+  /** never-read variables of dynamic functions or named in string annotations (never listed) */
+  unsupported: number
+}
+
+export interface UnusedVariablesResult {
+  path: string
+  status: OutlineStatus
+  /** source order, every assignment, at most 500; empty unless status is 'parsed' */
+  variables: UnusedVariable[]
+  summary: UnusedVariablesSummary
+  truncated: boolean
+}
