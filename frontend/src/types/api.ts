@@ -715,3 +715,50 @@ export interface UnboundNamesResult {
   summary: UnboundNamesSummary
   truncated: boolean
 }
+
+/** Step 58 name-occurrences outcome for one position of a Python file. */
+export type OccurrencesStatus =
+  | 'found'
+  | 'not_bound'
+  | 'unsupported'
+  | 'no_identifier'
+  | 'syntax_error'
+  | 'too_large'
+  | 'binary'
+  | 'unsupported_language'
+
+export type OccurrenceKind = 'read' | 'write' | 'delete' | 'parameter' | 'definition'
+
+/** The scope that holds the binding (Step 45's scope kinds). */
+export type OccurrenceScope = 'module' | 'function' | 'class' | 'lambda' | 'comprehension'
+
+/** One occurrence of the binding, in the reference's file. */
+export interface Occurrence {
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the identifier's first character */
+  column: number
+  kind: OccurrenceKind
+}
+
+/** The server's counts, taken before its 1,000-occurrence cap (authoritative, never recounted). */
+export interface OccurrencesSummary {
+  occurrences: number
+  reads: number
+  writes: number
+  deletes: number
+  /** parameter and definition sites */
+  bindings: number
+}
+
+export interface CodeOccurrencesResult {
+  status: OccurrencesStatus
+  /** null unless an identifier was found */
+  reference: DefinitionReference | null
+  /** null unless found */
+  scope: OccurrenceScope | null
+  /** source order, at most 1,000; empty unless found */
+  occurrences: Occurrence[]
+  summary: OccurrencesSummary
+  truncated: boolean
+}

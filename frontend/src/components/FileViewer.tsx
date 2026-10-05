@@ -5,6 +5,7 @@ import { useFileContent } from '../hooks/useFileContent'
 import { getErrorMessage } from '../services/client'
 import { formatBytes } from '../utils/format'
 import { CodeDefinition, selectionOffset } from './CodeDefinition'
+import { CodeOccurrences } from './CodeOccurrences'
 import { ErrorMessage } from './ErrorMessage'
 import { FileExplanation } from './FileExplanation'
 import { FileImporters } from './FileImporters'
@@ -160,6 +161,17 @@ export function FileViewer({
         {/* Keyed by path too: another file never shows this file's definition. */}
         <CodeDefinition
           key={`definition:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          content={data.content}
+          getOffset={() => (preRef.current ? selectionOffset(preRef.current) : null)}
+          onSelectLine={onSelectLine}
+        />
+        {/* Keyed by path too: another file never shows this file's occurrences. */}
+        <CodeOccurrences
+          key={`occurrences:${data.path}`}
           projectId={projectId}
           repositoryId={repositoryId}
           path={data.path}

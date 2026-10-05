@@ -647,6 +647,7 @@ describe('FileViewer integration', () => {
       'File importers',
       'Unbound names',
       'Go to definition',
+      'Name occurrences',
     ])
   })
 
