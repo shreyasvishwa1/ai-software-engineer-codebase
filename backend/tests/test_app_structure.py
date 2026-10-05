@@ -79,6 +79,7 @@ def test_openapi_generation(client: TestClient) -> None:
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/method-overrides",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/unbound-names",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/occurrences",
+        "/api/v1/projects/{project_id}/repositories/{repository_id}/files/unused-variables",
     }
 
 
