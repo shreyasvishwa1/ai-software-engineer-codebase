@@ -837,3 +837,40 @@ export interface UnusedImportsResult {
   summary: UnusedImportsSummary
   truncated: boolean
 }
+
+/**
+ * Step 66: one def, async def or class statement that a later one of the same name, in the same
+ * block, replaces before anything in the file could read it, as found by the server.
+ */
+export interface ReplacedDefinition {
+  /** 1-based line of the replaced statement's name */
+  line: number
+  /** 1-based code-point column of that name */
+  column: number
+  /** the name as Python sees it (NFKC); untrusted text */
+  name: string
+  kind: 'class' | 'function' | 'method'
+  /** 1-based line of the replacing statement's name */
+  replaced_line: number
+  /** 1-based code-point column of that name */
+  replaced_column: number
+}
+
+/** The server's counts, taken before its 500-entry cap (authoritative, never recounted). */
+export interface ReplacedDefinitionsSummary {
+  /** listed statements */
+  replaced: number
+  /** distinct listed bindings: (scope, name) */
+  distinct: number
+  /** never-read replaced statements that decorators, class creation or dynamic access may keep (never listed) */
+  unsupported: number
+}
+
+export interface ReplacedDefinitionsResult {
+  path: string
+  status: OutlineStatus
+  /** source order, at most 500; empty unless status is 'parsed' */
+  definitions: ReplacedDefinition[]
+  summary: ReplacedDefinitionsSummary
+  truncated: boolean
+}

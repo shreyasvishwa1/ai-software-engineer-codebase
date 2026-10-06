@@ -788,6 +788,7 @@ describe('Unused imports in the file viewer', () => {
       'Unused variables',
       'Go to definition',
       'Name occurrences',
+      'Redefined names',
     ])
     expect(screen.getByRole('region', { name: 'File importers' }).nextElementSibling).toBe(region())
     expect(region().nextElementSibling).toBe(screen.getByRole('region', { name: 'Unbound names' }))

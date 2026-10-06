@@ -11,6 +11,7 @@ import { FileExplanation } from './FileExplanation'
 import { FileImporters } from './FileImporters'
 import { FileImports } from './FileImports'
 import { FileOutline } from './FileOutline'
+import { FileRedefinedNames } from './FileRedefinedNames'
 import { FileUnboundNames } from './FileUnboundNames'
 import { FileUnusedImports } from './FileUnusedImports'
 import { FileUnusedVariables } from './FileUnusedVariables'
@@ -198,6 +199,15 @@ export function FileViewer({
           language={data.language}
           content={data.content}
           getOffset={() => (preRef.current ? selectionOffset(preRef.current) : null)}
+          onSelectLine={onSelectLine}
+        />
+        {/* Keyed by path too: another file never shows this file's redefined names. */}
+        <FileRedefinedNames
+          key={`redefined:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
           onSelectLine={onSelectLine}
         />
         {pieces && <p className={NOTE}>{`Showing line ${line}`}</p>}

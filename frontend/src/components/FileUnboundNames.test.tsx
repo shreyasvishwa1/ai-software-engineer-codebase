@@ -650,6 +650,7 @@ describe('FileViewer integration', () => {
       'Unused variables',
       'Go to definition',
       'Name occurrences',
+      'Redefined names',
     ])
   })
 

@@ -772,6 +772,7 @@ describe('Unused variables in the file viewer', () => {
       'Unused variables',
       'Go to definition',
       'Name occurrences',
+      'Redefined names',
     ])
     expect(screen.getByRole('region', { name: 'Unbound names' }).nextElementSibling).toBe(region())
     expect(region().nextElementSibling).toBe(screen.getByRole('region', { name: 'Go to definition' }))

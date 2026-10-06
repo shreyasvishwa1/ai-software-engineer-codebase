@@ -832,6 +832,7 @@ describe('Name occurrences in the file viewer', () => {
       'Unused variables',
       'Go to definition',
       'Name occurrences',
+      'Redefined names',
     ])
     const definition = screen.getByRole('region', { name: 'Go to definition' })
     expect(definition.nextElementSibling).toBe(region())
