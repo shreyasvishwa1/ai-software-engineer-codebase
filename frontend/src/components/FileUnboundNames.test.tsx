@@ -651,6 +651,7 @@ describe('FileViewer integration', () => {
       'Go to definition',
       'Name occurrences',
       'Redefined names',
+      'Unreachable code',
     ])
   })
 

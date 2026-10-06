@@ -867,6 +867,7 @@ describe('Redefined names in the file viewer', () => {
       'Go to definition',
       'Name occurrences',
       'Redefined names',
+      'Unreachable code',
     ])
     expect(screen.getByRole('region', { name: 'Name occurrences' }).nextElementSibling).toBe(region())
     expect(screen.getByRole('region', { name: 'Go to definition' }).nextElementSibling).toBe(

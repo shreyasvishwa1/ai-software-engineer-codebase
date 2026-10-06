@@ -874,3 +874,35 @@ export interface ReplacedDefinitionsResult {
   summary: ReplacedDefinitionsSummary
   truncated: boolean
 }
+
+/**
+ * Step 69: statements of one Python file that can never run because an earlier statement of the
+ * same block always leaves it, as found by the server.
+ */
+export interface UnreachableRegion {
+  /** 1-based line where the region's first statement starts (its first decorator's, if any) */
+  line: number
+  /** 1-based last line of the region's last statement */
+  end_line: number
+  /** statements in the region, counted in its own block (nested ones excluded) */
+  statements: number
+  /** the statement that always leaves the block: an if whose every branch leaves, or an endless while loop */
+  cause: 'return' | 'raise' | 'break' | 'continue' | 'if' | 'while'
+  /** 1-based line where that statement starts */
+  cause_line: number
+}
+
+/** The server's counts, taken before its 500-region cap (authoritative, never recounted). */
+export interface UnreachableCodeSummary {
+  regions: number
+  statements: number
+}
+
+export interface UnreachableCodeResult {
+  path: string
+  status: OutlineStatus
+  /** source order, at most 500; empty unless status is 'parsed' */
+  regions: UnreachableRegion[]
+  summary: UnreachableCodeSummary
+  truncated: boolean
+}
