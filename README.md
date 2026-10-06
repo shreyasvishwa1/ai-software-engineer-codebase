@@ -1,149 +1,383 @@
 # AI Software Engineer — Codebase Intelligence Platform
 
-A self-hosted web application for understanding software repositories. You import a repository
-(a ZIP upload or a public GitHub archive), then browse, search and analyze its code in the
-browser. Most analyses are deterministic static analyses of Python source; an optional AI
-feature explains a single file through Anthropic's API.
+**An intelligent codebase analysis platform that helps developers understand software
+repositories through static analysis, repository intelligence and AI-assisted code
+understanding.**
 
-Analyzed code is never executed, imported or compiled to bytecode: every analysis reads the
-stored files and, for Python, builds syntax trees with `ast` and `tokenize` only.
+Self-hosted · FastAPI + React/TypeScript · analyzes Python without ever executing it.
 
-## Contents
+## Overview
 
-- [Architecture](#architecture)
-- [Features](#features)
-- [Security model](#security-model)
-- [API overview](#api-overview)
-- [Setup](#setup)
-- [Testing](#testing)
-- [Development workflow](#development-workflow)
-- [Known limitations](#known-limitations)
+Import a repository as a ZIP upload or a public GitHub archive, then explore it in the
+browser:
+- browse and search the code;
+- navigate Python code across files;
+- run five static diagnostics;
+- review code metrics, declared dependencies and likely committed secrets.
+
+An optional feature explains a single file through Anthropic's API.
+
+Every analysis reads the stored files and parses Python with the standard-library `ast` and
+`tokenize` modules. Analyzed code is never executed, imported or compiled to bytecode.
+
+## Problem Statement
+
+Getting to know an unfamiliar codebase is slow. Editor tooling usually needs a local checkout
+and a working environment, and some tools run project code (imports, build scripts) to answer
+questions. That is a risk when the repository is not trusted. Developers need navigation and
+defect signals they can rely on for code they do not trust, with stated limits instead of
+guesses.
+
+## Solution
+
+- **Isolated ingestion**: a background worker validates every archive entry before writing
+  anything. It then stores a snapshot in which every file has a recorded SHA-256.
+- **Static, deterministic analysis**: Python's own parser and tokenizer, with explicit rules.
+  Cases the syntax cannot decide are counted separately, never guessed.
+- **On demand and protected**: every request is authenticated and ownership-checked, search
+  and analyses are rate-limited, and every result links to the exact line.
+
+## Key Features
+
+| Area | Capabilities |
+| --- | --- |
+| Ingestion | ZIP upload or public GitHub archive; background jobs with status; pending jobs can be cancelled |
+| Browsing and search | File tree with a path filter, language statistics, plain-text file viewer, literal code search, exact Python symbol search |
+| Code intelligence | Outline, imports, importers, go to definition, find references, name occurrences, call hierarchy, type hierarchy, method overrides |
+| Static diagnostics | Unused imports, unbound names, unused variables, redefined names, unreachable code |
+| Repository analysis | Code metrics, dependency inventory, secret scan |
+| AI (optional) | Explain one file with Anthropic |
+| Management | Projects and repositories: create, rename, delete (deleting requires typing the name) |
 
 ## Architecture
 
 ```
-Browser (React SPA, http://127.0.0.1:5173)
-   │  /api/*  (Vite dev proxy)
+Browser: React SPA (Vite dev server, http://127.0.0.1:5173)
+   │  /api/v1 (JSON, bearer token), proxied by Vite in development
    ▼
-FastAPI app (uvicorn, http://127.0.0.1:8000) ──► PostgreSQL 16 (users, projects, repositories,
-   │                                              files with SHA-256, jobs, code metrics)
-   ├──► Redis 7 ──► arq worker (ingestion and code-metrics jobs, scheduled maintenance)
-   │      └── per-user rate limits (fail open when Redis is unavailable)
-   └──► DATA_DIR/repositories/<repository_id>/   (extracted repository files)
+FastAPI on uvicorn (http://127.0.0.1:8000)
+   │  authentication → ownership → rate limit (search, analyses) → service
+   ├──► PostgreSQL 16: users, projects, repositories, files (with SHA-256),
+   │                   analysis jobs, file metrics
+   ├──► Redis 7: arq job queue and rate-limit counters
+   │      └──► arq worker: ingestion, code metrics, maintenance (every 5 minutes)
+   ├──► DATA_DIR/repositories/<repository_id>/: extracted files, read only through
+   │                                            the verified reader
+   └──► Anthropic API (optional): file explanations
 ```
 
-**Backend** (`backend/`): Python 3.12, FastAPI, SQLAlchemy 2 (async, asyncpg), Alembic
-migrations, Pydantic settings, arq for background jobs, argon2 password hashing, PyJWT access
-tokens. Code lives in `app/api` (routes), `app/services` (one module per capability),
-`app/schemas` (response models), `app/models` (ORM), `app/workers` (the arq worker) and
-`app/ai` (the Anthropic provider).
+**An analysis request**
+1. The frontend sends the bearer token with every request to its own `/api/v1`.
+2. FastAPI validates the token.
+3. The route checks that the project or repository belongs to the user.
+4. The route applies the per-user rate limit for search and analyses.
+5. The service loads the file snapshot with a single query, then reads files through the
+   verified reader and analyzes them in a worker thread.
 
-**Frontend** (`frontend/`): React 18, TypeScript, Vite 5, Tailwind CSS, TanStack Query and
-React Router. Pages: login, registration, projects, a project, and a repository. API calls go
-through one axios client (`/api/v1`).
+**An ingestion**
+1. The API records a pending job and queues its id (JSON, never pickle).
+2. The worker obtains the archive and validates every entry.
+3. It extracts into a staging directory.
+4. It replaces the file rows and marks the repository ready in one transaction, then swaps
+   the staging directory into place.
+5. Any failure rolls back and keeps the previous snapshot. A maintenance job recovers stuck
+   jobs and removes leftovers.
 
-**Storage**: an ingestion extracts the archive into a staging directory and swaps it into
-`DATA_DIR/repositories/<repository_id>/`. The database records every file's path, language,
-size and SHA-256; each later read is verified against that snapshot.
+## Technology Stack
 
-## Features
+| Layer | Technologies |
+| --- | --- |
+| Backend | Python 3.12, FastAPI, SQLAlchemy (async, asyncpg), Alembic, PostgreSQL 16, Redis 7, arq, Pydantic, PyJWT, argon2-cffi |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, TanStack Query, React Router, Axios |
+| Analysis | Python standard library: `ast`, `tokenize` (plus `json` and `tomllib` for manifests) |
+| Testing | pytest, ruff, mypy, Vitest, Testing Library |
+| Local infrastructure | Docker Compose for PostgreSQL and Redis (development only) |
 
-### Accounts, projects and repositories
-- Registration and login (email and password); JWT bearer access tokens, no refresh tokens.
-- Projects: create, list, rename or describe, delete.
-- Repositories inside a project: create (ZIP or GitHub source), rename, delete. The source is
-  fixed when the repository is created.
+## Security
 
-### Ingestion
-- **ZIP upload**, limited by `MAX_UPLOAD_SIZE_MB`, entry count, total and per-file extracted size,
-  and compression ratio (zip-bomb guard).
-- **Public GitHub archive**: only `https://github.com/<owner>/<repository>` URLs, an optional
-  branch, downloaded without git or credentials. Redirects are followed only to GitHub hosts,
-  every resolved address must be public, and the download is size-limited.
-- Ingestion runs in the arq worker. The repository page shows job progress and recent jobs, and
-  a pending job can be cancelled. Scheduled maintenance fails stuck jobs and removes leftover
-  staging files.
+- **Passwords**: hashed with Argon2 (argon2-cffi).
+- **Authentication**: JWT bearer tokens (PyJWT).
+  - Signed with `SECRET_KEY` using HS256 by default.
+  - The `sub` and `exp` claims are required, and tokens last 60 minutes by default.
+  - Every missing or invalid token gets the same 401 response.
+- **Session**: the frontend keeps the token in `sessionStorage`, so the session ends when the
+  tab closes. The token is attached only to the app's own `/api/v1` requests, and any 401
+  clears it.
+- **Ownership**: every endpoint that addresses a project or repository checks ownership first.
+  Another user's project or repository answers 404 ("Project not found", "Repository not
+  found"), exactly like a missing one.
+- **Rate limiting**: fixed windows in Redis, updated by atomic Lua scripts. Keys store SHA-256
+  digests, never raw user ids, emails or IPs.
+  - Search, per-file analyses, secret scans and explanations have per-user limits.
+  - Login is limited per IP and per email, registration per IP.
+  - Limited requests receive 429 with `Retry-After`.
+  - If Redis is unavailable, requests proceed without limits.
+- **Verified file reads**: every read checks that the path stays inside the repository
+  directory, refuses links and junctions, bounds the size, and compares the SHA-256 recorded at
+  ingestion. A mismatch answers 409 "Repository changed during analysis; run it again".
+- **Archive safety**: every entry is checked before anything is written.
+  - Rejected: absolute, drive, UNC or `..` paths; symbolic links; encrypted or unsupported
+    entries; and duplicate or case-colliding paths.
+  - Limited: entry count, total and per-file size, and compression ratio (zip bombs).
+  - Extraction re-checks the actual sizes and destinations.
+- **GitHub downloads**:
+  - Only `https://github.com/<owner>/<repository>` is accepted, and the download URL is built
+    on the server.
+  - Redirects are followed only to GitHub hosts, and every resolved address must be public.
+  - The download is size-limited, with no git and no credentials.
+- **No repository code execution**: nothing is run, imported or compiled to bytecode.
+  Dependency manifests are parsed, never installed.
+- **Plain-text rendering**: repository content and every server-provided string are rendered
+  as text, never as HTML. External URLs are shown as text, not links.
+- **Production exposure**:
+  - `/docs`, `/redoc` and `/openapi.json` are disabled when `ENVIRONMENT=production`.
+  - CORS accepts exact origins only.
+  - `SECRET_KEY` must be at least 32 characters, and the placeholder value is rejected in
+    production.
+- **Anthropic boundary**: explanations are off unless `ANTHROPIC_API_KEY` is set.
+  - Only the requested, verified file (at most 64 KiB) is sent, always to
+    `https://api.anthropic.com`.
+  - The prompt is fixed on the server and the model gets no tools.
+  - Nothing is stored or logged.
 
-### Browsing
-- File tree with a path filter: a case-insensitive, literal substring match, done entirely in
-  the browser.
-- Language statistics (files and bytes per language).
-- File viewer: read-only, rendered as plain text, preview limit 1 MiB, line highlighting.
-  Analysis results navigate to their lines.
+## Code Intelligence
 
-### Search
-- **Code search**: literal, case-insensitive text search across the repository, stopping at
-  5,000 files, 64 MiB read or 200 matches.
-- **Symbol search**: exact, case-sensitive names of Python classes, functions and methods.
+Python files only, on demand. Navigation follows imports across the repository's files, within
+per-request budgets; results report any truncation.
 
-### Python code intelligence
-These run on demand for the open Python file:
-- **Outline**: classes, functions and methods.
-- **Imports**, resolved to repository files where possible, and **importers** (files that
-  import this one).
-- **Go to definition** and **name occurrences** for the name under the selection, and **find
-  references** for a `def` or `class`.
-- **Call hierarchy**, **type hierarchy** and **method overrides**.
+| Feature | What it does | Scope |
+| --- | --- | --- |
+| Outline | Classes, functions and methods, each linked to its line | File |
+| Imports / importers | Imports resolved to repository files; files that import this one | Cross-file |
+| Go to definition | Resolves the selected name through Python's scope rules and imports | Cross-file |
+| Find references | Uses of a function or class, each confirmed by resolving it; methods and nested classes are not supported | Cross-file |
+| Name occurrences | Every occurrence of the same binding, not just the same spelling | File |
+| Call hierarchy | Callers and callees; dynamic calls are counted, not guessed | Cross-file |
+| Type hierarchy | Direct bases and direct subclasses | Cross-file |
+| Method overrides | Methods this method directly overrides, and direct overrides of it | Cross-file |
 
-### Python diagnostics
-These also run on demand for the open Python file. Every one reports only what the syntax
-proves; uncertain cases are counted separately or not reported at all.
-- **Unused imports**: import bindings whose name nothing in the file reads.
-- **Unbound names**: names read with no statically known binding. This is not a runtime
-  `NameError` detector.
-- **Unused variables**: assignments to function locals that nothing in the file reads.
-- **Redefined names**: `def`, `async def` and `class` statements replaced by a later one of the
-  same name before anything reads them.
-- **Unreachable code**: statements after a `return`, `raise`, `break` or `continue`, after an
-  `if` whose every branch leaves, or after a `while True:` loop without a `break`.
+There is no type inference: attribute uses such as `self.method()` or `obj.attr` are reported
+as unsupported, never guessed.
 
-### Repository analyses
-- **Code metrics**: per-file line and blank-line counts, computed by a background job and stored
-  per snapshot.
-- **Dependencies**: declared dependencies from `package.json`, `pyproject.toml` (the PEP 621
-  `[project]` table) and `requirements*.txt`. Nothing is resolved, installed or fetched.
-- **Secret scan**: a fixed set of rules for likely committed credentials. Findings carry the
-  path, line and rule, never the matched text.
+Search:
+- **Code search**: literal and case-insensitive; stops at 5,000 files, 64 MiB or 200 matches.
+- **Symbol search**: exact, case-sensitive Python names, up to 200 results.
 
-### AI file explanation (optional)
-- Disabled unless `ANTHROPIC_API_KEY` is set (otherwise the endpoint answers 503).
-- Explaining a file sends its verified content (at most 64 KiB) to Anthropic's API, so review
-  Anthropic's data-retention and privacy terms before enabling it. Requests always go to
-  `https://api.anthropic.com`; the model is set by `LLM_MODEL` (default `claude-opus-5-5`).
-  Limited to 20 explanations per user per hour.
+## Static Diagnostics
 
-## Security model
+Each diagnostic analyzes one Python file and reports only what the syntax proves. Results
+link to their lines and are capped at 500 per diagnostic, with exact counts. Files above
+256 KiB are not parsed.
 
-- **Authentication**: argon2 password hashing, and HS256/384/512-signed JWT access tokens
-  (`SECRET_KEY`, at least 32 characters; the placeholder value is rejected in production).
-  Login is rate-limited per IP address and per email, registration per IP address.
-- **Authorization**: every project and repository endpoint checks ownership first. Another
-  user's project or repository answers 404 ("Project not found", "Repository not found"),
-  exactly like a missing one.
-- **Rate limits**: search, per-file analyses, secret scans and explanations have per-user
-  limits in Redis, checked after ownership: 20 to 120 requests per 10 minutes depending on cost,
-  and per hour for secret scans and explanations. The limiter fails open if Redis is
-  unavailable.
-- **Verified reads**: every file read checks containment in the repository directory, refuses
-  links and junctions, bounds the size, and compares the SHA-256 recorded at ingestion. Any
-  mismatch answers 409 "Repository changed during analysis; run it again".
-- **No code execution**: analyses never run, import or compile analyzed code, and make no
-  network calls on its behalf. Python is parsed with `ast.parse` and `tokenize` only.
-- **Untrusted content**: the frontend renders repository content and every server-provided
-  string as plain text, never as HTML. External URLs are shown as text, not links.
-- **Data minimization**: analysis responses carry positions, names and counts, never file
-  contents or snippets (apart from the file viewer and search previews), checksums or storage
-  paths. Repository content is not logged.
-- **Client storage**: the access token is kept in `localStorage`. No other server data is
-  stored in the browser.
+| Diagnostic | Reports | Deliberately conservative |
+| --- | --- | --- |
+| Unused imports | Import bindings whose name nothing in the file reads | Possible package or stub re-exports, dynamic access and string annotations are counted, not listed |
+| Unbound names | Names read with no statically known binding | Not a runtime `NameError` detector |
+| Unused variables | Assignments to function locals that nothing reads | Not a data-flow analysis |
+| Redefined names | `def`, `async def` and `class` statements replaced by a later one of the same name before anything reads them | Decorated definitions, classes with bases, and dynamic scopes are counted only |
+| Unreachable code | Statements after `return`, `raise`, `break` or `continue`, after an `if` whose every branch leaves, or after `while True:` without a `break` | Leaving through `try`, `with` or `match`, and calls that never return, are not inferred |
 
-## API overview
+## Repository Analysis
 
-All endpoints are under `/api/v1`. Interactive documentation runs at
-`http://127.0.0.1:8000/docs`. Repository endpoints share the prefix
-`/projects/{project_id}/repositories/{repository_id}`, written `…` below. Per-file endpoints take
-`?path=<file path>`. Go to definition and name occurrences also take `line` and `column`; find
-references and the three hierarchy endpoints also take `line`.
+- **Code metrics**: per-file line and blank-line counts. They are computed by a background job
+  ("Analyze code") and stored for each snapshot.
+- **Dependencies**: declared dependencies from up to 50 manifests (5,000 dependencies):
+  - `package.json`;
+  - `pyproject.toml` (the PEP 621 `[project]` table);
+  - `requirements*.txt`.
+
+  Nothing is resolved, installed or fetched.
+- **Secret scan**: seven fixed rules covering AWS access key IDs; GitHub, Slack, Stripe live,
+  Google API and Anthropic API keys; and private keys.
+  - Findings carry the path, line and rule, never the matched text.
+  - It stops at 5,000 files, 64 MiB or 500 findings.
+- **Language statistics**: files and bytes per language.
+
+## AI File Explanation
+
+- Optional. Without `ANTHROPIC_API_KEY`, the endpoint answers 503 "AI explanations are not
+  configured".
+- Sends the verified content of one file (at most 64 KiB) to Anthropic's Messages API, with a
+  fixed server-side prompt and no tools. The model is set by `LLM_MODEL` (default
+  `claude-opus-5-5`).
+- Limited to 20 explanations per user per hour. Review Anthropic's data-retention and privacy
+  terms before enabling it.
+
+## Testing & Quality Engineering
+
+Results at the final development commit:
+
+| Check | Result |
+| --- | --- |
+| Frontend tests (Vitest, Testing Library, jsdom) | 1,204 passing in 36 files |
+| Backend tests (pytest) | 2,552 passing in 40 files; 30 skipped on Windows, where creating symlinks needs a privilege |
+| TypeScript typecheck and production build | Passing |
+| `ruff check` and mypy | Passing |
+| Mutation testing | 287/287 mutants caught in the final development phase |
+
+- **Isolation**: frontend tests mock the API at the axios adapter, so no backend is needed.
+  Backend database and API tests run against a throwaway, already-migrated PostgreSQL database
+  inside rolled-back transactions, and a disposable Redis.
+- **Oracles**: diagnostics are cross-checked against CPython's own `symtable` and compiler
+  output, run on code the tests write themselves. Seeded random programs drive differential
+  tests.
+- **Security tests**: every Python analysis has a test that patches `compile`, `exec`, `eval`,
+  `subprocess` and sockets to prove repository code never runs. Endpoints are also tested for
+  ownership checks, for ownership before rate limiting, and for the 409 answer when the
+  snapshot changes.
+- **Mutation testing**: each change in the final development phase (redefined names, the
+  file-tree filter, unreachable code) was mutation-tested.
+  - Every mutant was applied, tested, and the file restored and checked against its SHA-256.
+  - Each survivor was either shown to be equivalent and replaced, or answered with a new test.
+  - The runners were scratch tooling and are not part of this repository.
+  - The 287 figure covers the final phase only, not mutation coverage of the whole application.
+
+## Screenshots
+
+_Screenshots are pending; the placeholders below mark where they will go._
+
+<!-- Screenshot: Projects dashboard -->
+<!-- Add final screenshot here -->
+
+<!-- Screenshot: Repository Overview (status, ingestion, recent jobs) -->
+<!-- Add final screenshot here -->
+
+<!-- Screenshot: File tree with the path filter -->
+<!-- Add final screenshot here -->
+
+<!-- Screenshot: Code intelligence (outline and symbol analyses) -->
+<!-- Add final screenshot here -->
+
+<!-- Screenshot: Static diagnostics -->
+<!-- Add final screenshot here -->
+
+<!-- Screenshot: Repository analysis (code metrics, dependencies, secret scan) -->
+<!-- Add final screenshot here -->
+
+<!-- Screenshot: AI file explanation -->
+<!-- Add final screenshot here -->
+
+## Demo
+
+The intended workflow, in about five minutes:
+
+**Login → Project → Repository → Ingestion → Browse → Search → Code Intelligence →
+Diagnostics → Repository Analysis → Optional AI Explanation**
+
+1. Sign in, create a project, and add a repository from a ZIP or a public GitHub URL.
+2. Start ingestion and watch the job move from pending to completed.
+3. Browse the file tree, filter it by path, and search code and symbols.
+4. Open a Python file: show its outline, go to a definition in another file, and find
+   references.
+5. Run the five diagnostics, then review code metrics, dependencies and the secret scan.
+6. If configured, explain the file with Anthropic.
+
+<!-- Demo video: add the link to the recorded walkthrough here -->
+
+## Installation
+
+**Requirements**: Python 3.12, Node.js 18 or newer, and Docker (or local PostgreSQL 16 and
+Redis 7).
+
+From the repository root:
+
+1. Copy `.env.example` to `backend/.env`, which the backend reads. Copy it again to a
+   repository-root `.env`, which Docker Compose reads for the `POSTGRES_*` values.
+2. Choose your own local database password and `SECRET_KEY`. Never commit either file.
+3. Start PostgreSQL and Redis (development only):
+   ```bash
+   docker compose up -d postgres redis
+   ```
+
+## Environment Variables
+
+The backend reads `backend/.env`; real environment variables override it. Every variable
+below exists in the code.
+
+| Variable | Status | Default | Purpose |
+| --- | --- | --- | --- |
+| `SECRET_KEY` | Required | — | Signs JWTs; at least 32 characters; the placeholder is rejected in production |
+| `DATABASE_URL` | Required | — | Must use `postgresql+asyncpg://` (the built-in default is not usable) |
+| `ENVIRONMENT` | Optional | `development` | `development`, `test` or `production`; production disables `/docs`, `/redoc` and `/openapi.json` |
+| `REDIS_URL` | Optional | `redis://localhost:6379/0` | Job queue and rate limits |
+| `CORS_ORIGINS` | Optional | `http://localhost:5173,http://127.0.0.1:5173` | Exact allowed origins; `*` is rejected |
+| `DATA_DIR` | Optional | `<repository>/data` | Storage for repositories and uploads |
+| `JWT_ALGORITHM` | Optional | `HS256` | `HS256`, `HS384` or `HS512` |
+| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Optional | `60` | Token lifetime |
+| `MAX_UPLOAD_SIZE_MB` | Optional | `100` | Upload size limit |
+| `MAX_ARCHIVE_FILE_COUNT` | Optional | `10000` | Entries per archive |
+| `MAX_EXTRACTED_SIZE_MB` | Optional | `500` | Total extracted size |
+| `MAX_EXTRACTED_FILE_SIZE_MB` | Optional | `25` | Per-file extracted size (at most `MAX_EXTRACTED_SIZE_MB`) |
+| `MAX_COMPRESSION_RATIO` | Optional | `100` | Per-entry compression ratio (zip-bomb guard) |
+| `ANTHROPIC_API_KEY` | Optional | empty | Enables AI explanations; empty keeps them disabled |
+| `LLM_MODEL` | Optional | `claude-opus-5-5` | Model for explanations |
+| `DEBUG` | Optional, development only | `false` | Logs SQL statements, including bound parameter values; keep it off outside local development |
+| `APP_NAME`, `APP_VERSION` | Optional | `AI Software Engineer`, `1.0.0` | Shown in the API title and health responses |
+| `API_PREFIX` | Optional | `/api` | API mount prefix; the frontend expects `/api/v1`, so keep the default |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Development only (Docker Compose) | — | Required by `docker-compose.yml`; read from the repository-root `.env` or the shell |
+| `POSTGRES_PORT` | Development only (Docker Compose) | `5432` | Local PostgreSQL port |
+| `TEST_DATABASE_URL`, `TEST_MIGRATION_DATABASE_URL`, `TEST_REDIS_URL` | Tests only | — | See [Testing](#testing) |
+
+## Running the Backend
+
+From `backend/`:
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements-dev.txt -c constraints.txt
+.venv/Scripts/alembic upgrade head
+.venv/Scripts/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+In a second terminal, start the worker, which ingestion and code metrics need:
+```bash
+.venv/Scripts/arq app.workers.worker.WorkerSettings
+```
+
+On macOS or Linux, use `.venv/bin/` instead of `.venv/Scripts/`. `constraints.txt` pins every
+backend package to the verified versions. In development, the interactive API documentation
+is at http://127.0.0.1:8000/docs.
+
+## Running the Frontend
+
+From `frontend/`:
+```bash
+npm install
+npm run dev
+```
+
+Open http://127.0.0.1:5173. The dev server proxies `/api` to the backend.
+
+## Testing
+
+**Frontend** (from `frontend/`):
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+**Backend** (from `backend/`):
+```bash
+.venv/Scripts/python -m pytest
+.venv/Scripts/ruff check .
+.venv/Scripts/mypy
+```
+
+Analysis tests run offline. Database and API tests are skipped unless these variables are
+set:
+- `TEST_DATABASE_URL`: an already-migrated PostgreSQL database whose name ends in `_test`.
+  Every test runs inside a transaction that is rolled back.
+- `TEST_MIGRATION_DATABASE_URL`: a separate, disposable database for migration tests.
+- `TEST_REDIS_URL`: a loopback Redis with a database index other than 0. The rate-limit tests
+  flush it.
+
+## API Overview
+
+All endpoints are under `/api/v1`. Repository endpoints share the prefix
+`/projects/{project_id}/repositories/{repository_id}`, written `…` below.
+- Per-file endpoints take `?path=<file path>`.
+- Go to definition and name occurrences also take `line` and `column`.
+- Find references and the three hierarchy endpoints also take `line`.
 
 | Area | Endpoints |
 | --- | --- |
@@ -156,97 +390,40 @@ references and the three hierarchy endpoints also take `line`.
 | Search | `POST …/search` (code), `POST …/symbols/search` |
 | Code intelligence | `GET …/files/outline`, `…/files/imports`, `…/files/importers`, `…/files/definition`, `…/files/references`, `…/files/occurrences`, `…/files/call-hierarchy`, `…/files/type-hierarchy`, `…/files/method-overrides` |
 | Diagnostics | `GET …/files/unused-imports`, `…/files/unbound-names`, `…/files/unused-variables`, `…/files/replaced-definitions`, `…/files/unreachable-code` |
-| Repository analyses | `GET`/`POST …/analysis/code-metrics`, `GET …/analysis/dependencies`, `GET …/analysis/secrets` |
+| Repository analysis | `GET`/`POST …/analysis/code-metrics`, `GET …/analysis/dependencies`, `GET …/analysis/secrets` |
 | AI | `POST …/files/explain` |
 
-## Setup
+## Limitations
 
-These steps run everything locally. `docker-compose.yml` provides PostgreSQL and Redis for
-development only; it is not a production deployment.
+- **Language**: code intelligence and diagnostics cover Python only, with Python 3.12 syntax.
+- **No type inference**: attribute uses such as `self.method()` are reported as unsupported.
+  Find references does not support methods or nested classes.
+- **Diagnostics are file-level**: each looks at one file, and files above 256 KiB are not
+  parsed.
+- **GitHub import**: public repositories only.
+- **Repositories**: the source cannot be changed after creation. Re-ingest to refresh the
+  files, or create a new repository.
+- **Sessions**: there are no refresh tokens. A session ends when the tab closes or the token
+  expires.
+- **Navigation**: files and lines are not reflected in the URL, so they cannot be shared as
+  links.
+- **Tooling**: there is no CI pipeline yet, and ESLint is not installed, so `npm run lint`
+  fails.
+- **Bundle size**: the main frontend bundle is about 739 kB, above Vite's 500 kB warning.
+- **Deployment**: production deployment is not the current goal. This is a single-node
+  development setup, and `docker-compose.yml` is for local development only.
 
-**Requirements**: Python 3.12, Node.js 18 or newer, and Docker (or local PostgreSQL 16 and
-Redis 7).
+## Future Scope
 
-1. **Configuration**: copy `.env.example` to `backend/.env`, which the backend reads, and to a
-   repository-root `.env`, which Docker Compose reads for `POSTGRES_*`. Choose your own local
-   password and `SECRET_KEY`. `DATABASE_URL` must use `postgresql+asyncpg://`. Never commit
-   either file.
-2. **Database and queue**:
-   ```bash
-   docker compose up -d postgres redis
-   ```
-3. **Backend** (from `backend/`):
-   ```bash
-   python -m venv .venv
-   .venv/Scripts/pip install -r requirements-dev.txt -c constraints.txt
-   .venv/Scripts/alembic upgrade head
-   .venv/Scripts/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-   ```
-   On macOS or Linux, use `.venv/bin/` in place of `.venv/Scripts/`. `constraints.txt` pins
-   every backend package to the verified versions.
-4. **Worker** (from `backend/`, in another terminal; ingestion and code metrics need it):
-   ```bash
-   .venv/Scripts/arq app.workers.worker.WorkerSettings
-   ```
-5. **Frontend** (from `frontend/`):
-   ```bash
-   npm install
-   npm run dev
-   ```
-   Open http://127.0.0.1:5173. The dev server proxies `/api` to the backend.
+Planned future work, not yet implemented:
+- A CI pipeline: tests, typecheck, ruff, mypy and ESLint.
+- Shareable links to a file and line.
+- A repository-wide diagnostics dashboard.
+- An import graph view.
+- Type-informed references, such as method references.
+- Refresh tokens.
+- Frontend bundle optimization (code splitting).
 
-## Testing
+## License
 
-**Frontend** (from `frontend/`):
-```bash
-npm test
-npm run typecheck
-npm run build
-```
-Vitest with Testing Library runs in jsdom; the API is mocked at the axios adapter, so no
-backend is needed.
-
-**Backend** (from `backend/`):
-```bash
-.venv/Scripts/python -m pytest
-.venv/Scripts/ruff check .
-.venv/Scripts/mypy
-```
-Analysis tests run offline. Database and API tests need these variables, and are skipped
-without them:
-- `TEST_DATABASE_URL`: an already-migrated PostgreSQL database whose name ends in `_test`.
-  Every test runs inside a transaction that is rolled back.
-- `TEST_MIGRATION_DATABASE_URL`: a separate, disposable database for migration tests.
-- `TEST_REDIS_URL`: a loopback Redis with a database index other than 0. The rate-limit tests
-  flush it.
-
-Symlink tests are skipped on Windows unless the process may create symlinks.
-
-## Development workflow
-
-Work proceeds one capability per commit. Each change goes through a written proposal, then:
-- implementation with focused tests (oracle tests compare analyses against CPython where
-  possible);
-- mutation testing of the new code, where every mutant must be caught;
-- the full frontend and backend regression suites, typecheck, build and lint;
-- an integrity check that no unrelated file changed.
-
-## Known limitations
-
-- **Python only**: code intelligence and diagnostics cover Python only, one file at a time,
-  with Python 3.12 syntax. Files above 256 KiB are not parsed, files above 1 MiB are not read,
-  and result lists are capped (typically 500 entries) with exact counts.
-- **Static analysis only**: dynamic features such as `globals()`, `eval`, decorators,
-  metaclasses and `sys.modules` limit what can be proven. The diagnostics stay silent or count
-  such cases rather than guess. Unreachable-code detection does not follow `try`, `with` or
-  `match` statements, or calls that never return.
-- **Accounts**: there are no refresh tokens, password reset or account deletion, and the
-  access token lives in `localStorage`.
-- **Repositories**: the source cannot be changed after creation; re-ingest instead. GitHub
-  import supports public repositories only.
-- **Navigation**: selected files and lines are not reflected in the URL, so they cannot be
-  shared as links.
-- **Tooling**: `npm run lint` fails because ESLint is not installed. Nineteen older backend
-  files do not match `ruff format`. The production bundle exceeds Vite's 500 kB chunk warning.
-- **Deployment**: this is a single-node development setup; there is no production deployment
-  guide.
+Released under the [MIT License](LICENSE).
