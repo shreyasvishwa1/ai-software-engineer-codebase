@@ -55,6 +55,11 @@ export interface RepositoryCreate {
   default_branch?: string
 }
 
+/** Partial update (PATCH); the frontend only renames repositories. */
+export interface RepositoryUpdate {
+  name?: string
+}
+
 export interface AnalysisJob {
   id: string
   project_id: string

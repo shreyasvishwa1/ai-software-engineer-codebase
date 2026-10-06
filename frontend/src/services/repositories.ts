@@ -4,6 +4,7 @@ import type {
   RepositoryCreate,
   RepositoryLanguages,
   RepositoryTree,
+  RepositoryUpdate,
 } from '../types/api'
 import { apiClient } from './client'
 
@@ -31,6 +32,20 @@ export async function createRepository(
 ): Promise<Repository> {
   const { data } = await apiClient.post<Repository>(repositoriesPath(projectId), body)
   return data
+}
+
+export async function updateRepository(
+  projectId: string,
+  repositoryId: string,
+  body: RepositoryUpdate,
+): Promise<Repository> {
+  const { data } = await apiClient.patch<Repository>(repositoryPath(projectId, repositoryId), body)
+  return data
+}
+
+/** Deletes the repository with all of its files and analysis results (204). */
+export async function deleteRepository(projectId: string, repositoryId: string): Promise<void> {
+  await apiClient.delete(repositoryPath(projectId, repositoryId))
 }
 
 export async function getRepositoryTree(

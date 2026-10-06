@@ -10,6 +10,7 @@ import { FileViewer, type LineSelection } from '../components/FileViewer'
 import { IngestPanel } from '../components/IngestPanel'
 import { JobProgress } from '../components/JobProgress'
 import { LanguageStats } from '../components/LanguageStats'
+import { RepositorySettings } from '../components/RepositorySettings'
 import { SecretsPanel } from '../components/SecretsPanel'
 import { StatusBadge } from '../components/StatusBadge'
 import { SymbolSearchPanel } from '../components/SymbolSearchPanel'
@@ -87,6 +88,12 @@ export function RepositoryPage() {
           {repo.source_url && <span className="ml-2 break-all font-mono">{repo.source_url}</span>}
           {repo.default_branch && <span className="ml-2">({repo.default_branch})</span>}
         </p>
+        <RepositorySettings
+          key={repo.id}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          repository={repo}
+        />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">

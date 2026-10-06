@@ -2,14 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   createRepository,
+  deleteRepository,
   getRepository,
   getRepositoryLanguages,
   getRepositoryTree,
   ingestGithub,
   ingestZip,
   listRepositories,
+  updateRepository,
 } from '../services/repositories'
-import type { RepositoryCreate } from '../types/api'
+import type { Repository, RepositoryCreate, RepositoryUpdate } from '../types/api'
 import { queryKeys } from './queryKeys'
 
 export function useRepositories(projectId: string) {
@@ -32,6 +34,41 @@ export function useCreateRepository(projectId: string) {
     mutationFn: (body: RepositoryCreate) => createRepository(projectId, body),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.repositories(projectId) }),
+  })
+}
+
+/**
+ * Renames a repository: only the name is ever sent. The server's repository replaces the cached
+ * repository and its entry in the project's list.
+ */
+export function useUpdateRepository(projectId: string, repositoryId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name }: RepositoryUpdate) => updateRepository(projectId, repositoryId, { name }),
+    onSuccess: (repository) => {
+      queryClient.setQueryData(queryKeys.repository(projectId, repositoryId), repository)
+      queryClient.setQueryData<Repository[]>(queryKeys.repositories(projectId), (repositories) =>
+        repositories?.map((cached) => (cached.id === repository.id ? repository : cached)),
+      )
+    },
+  })
+}
+
+/**
+ * Runs before the caller navigates away: the repository leaves the project's cached list (found by
+ * its server id, the mutation variable), then every cached query of it, all keyed under
+ * queryKeys.repository, is removed, so none can refetch it.
+ */
+export function useDeleteRepository(projectId: string, repositoryId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (_id: string) => deleteRepository(projectId, repositoryId),
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<Repository[]>(queryKeys.repositories(projectId), (repositories) =>
+        repositories?.filter((cached) => cached.id !== id),
+      )
+      queryClient.removeQueries({ queryKey: queryKeys.repository(projectId, repositoryId) })
+    },
   })
 }
 
