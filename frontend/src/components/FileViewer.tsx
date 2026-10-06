@@ -12,6 +12,7 @@ import { FileImporters } from './FileImporters'
 import { FileImports } from './FileImports'
 import { FileOutline } from './FileOutline'
 import { FileUnboundNames } from './FileUnboundNames'
+import { FileUnusedImports } from './FileUnusedImports'
 import { FileUnusedVariables } from './FileUnusedVariables'
 
 /** A line to highlight; a new object for every selection. */
@@ -149,6 +150,15 @@ export function FileViewer({
           path={data.path}
           language={data.language}
           onSelectFile={onSelectFile}
+        />
+        {/* Keyed by path too: another file never shows this file's unused imports. */}
+        <FileUnusedImports
+          key={`unused-imports:${data.path}`}
+          projectId={projectId}
+          repositoryId={repositoryId}
+          path={data.path}
+          language={data.language}
+          onSelectLine={onSelectLine}
         />
         {/* Keyed by path too: another file never shows this file's unbound names. */}
         <FileUnboundNames

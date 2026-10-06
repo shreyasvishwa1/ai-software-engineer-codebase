@@ -645,6 +645,7 @@ describe('FileViewer integration', () => {
       'File outline',
       'File imports',
       'File importers',
+      'Unused imports',
       'Unbound names',
       'Unused variables',
       'Go to definition',

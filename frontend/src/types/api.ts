@@ -794,3 +794,35 @@ export interface UnusedVariablesResult {
   summary: UnusedVariablesSummary
   truncated: boolean
 }
+
+/**
+ * Step 62: one import whose bound name nothing in the file reads, as found by the server (an
+ * import kept only for its side effects is listed too).
+ */
+export interface UnusedImport {
+  /** 1-based */
+  line: number
+  /** 1-based code-point column of the bound name (shown, never used for navigation) */
+  column: number
+  /** the bound name as Python sees it (NFKC); untrusted text */
+  name: string
+}
+
+/** The server's counts, taken before its 500-entry cap (authoritative, never recounted). */
+export interface UnusedImportsSummary {
+  /** listed imports */
+  unused: number
+  /** distinct listed bindings: (scope, name) */
+  distinct: number
+  /** never-read imports of package/stub interfaces, dynamic code or string annotations (never listed) */
+  unsupported: number
+}
+
+export interface UnusedImportsResult {
+  path: string
+  status: OutlineStatus
+  /** source order, every import, at most 500; empty unless status is 'parsed' */
+  imports: UnusedImport[]
+  summary: UnusedImportsSummary
+  truncated: boolean
+}

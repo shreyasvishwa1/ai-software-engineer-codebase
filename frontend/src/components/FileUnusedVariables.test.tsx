@@ -767,6 +767,7 @@ describe('Unused variables in the file viewer', () => {
       'File outline',
       'File imports',
       'File importers',
+      'Unused imports',
       'Unbound names',
       'Unused variables',
       'Go to definition',
