@@ -82,6 +82,7 @@ def test_openapi_generation(client: TestClient) -> None:
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/unused-variables",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/unused-imports",
         "/api/v1/projects/{project_id}/repositories/{repository_id}/files/replaced-definitions",
+        "/api/v1/projects/{project_id}/repositories/{repository_id}/files/unreachable-code",
     }
 
 

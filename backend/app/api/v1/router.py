@@ -22,6 +22,7 @@ from app.api.v1.routes import (
     code_search,
     code_type_hierarchy,
     code_unbound_names,
+    code_unreachable_code,
     code_unused_imports,
     code_unused_variables,
     dependencies,
@@ -62,3 +63,4 @@ api_router.include_router(code_occurrences.router)
 api_router.include_router(code_unused_variables.router)
 api_router.include_router(code_unused_imports.router)
 api_router.include_router(code_replaced_definitions.router)
+api_router.include_router(code_unreachable_code.router)
