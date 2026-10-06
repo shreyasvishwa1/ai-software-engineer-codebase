@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { CreateRepositoryForm } from '../components/CreateRepositoryForm'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { ProjectSettings } from '../components/ProjectSettings'
 import { StatusBadge } from '../components/StatusBadge'
 import { useProject } from '../hooks/useProjects'
 import { useRepositories } from '../hooks/useRepository'
@@ -29,6 +30,8 @@ export function ProjectPage() {
         {project.data.description && (
           <p className="mt-1 text-slate-400">{project.data.description}</p>
         )}
+        {/* Keyed by id: another project never shows this project's forms or errors. */}
+        <ProjectSettings key={project.data.id} project={project.data} />
       </div>
       <div className="grid gap-8 md:grid-cols-[2fr_1fr]">
         <section className="space-y-3">

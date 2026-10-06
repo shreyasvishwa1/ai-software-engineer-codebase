@@ -30,6 +30,12 @@ export interface ProjectCreate {
   description?: string | null
 }
 
+/** Partial update (PATCH): omitted fields stay unchanged; description may be set to null. */
+export interface ProjectUpdate {
+  name?: string
+  description?: string | null
+}
+
 export interface Repository {
   id: string
   project_id: string
