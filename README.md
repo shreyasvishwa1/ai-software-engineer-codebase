@@ -246,28 +246,35 @@ Results at the final development commit:
 
 ## Screenshots
 
-_Screenshots are pending; the placeholders below mark where they will go._
+**Sign in**, with a link to reset a forgotten password by email
 
-<!-- Screenshot: Projects dashboard -->
-<!-- Add final screenshot here -->
+![Sign-in page](docs/screenshots/01-sign-in.png)
 
-<!-- Screenshot: Repository Overview (status, ingestion, recent jobs) -->
-<!-- Add final screenshot here -->
+**Password reset request**
 
-<!-- Screenshot: File tree with the path filter -->
-<!-- Add final screenshot here -->
+![Forgot-password page](docs/screenshots/02-forgot-password.png)
 
-<!-- Screenshot: Code intelligence (outline and symbol analyses) -->
-<!-- Add final screenshot here -->
+**Projects dashboard**
 
-<!-- Screenshot: Static diagnostics -->
-<!-- Add final screenshot here -->
+![Projects dashboard](docs/screenshots/03-projects.png)
 
-<!-- Screenshot: Repository analysis (code metrics, dependencies, secret scan) -->
-<!-- Add final screenshot here -->
+**Project with its repositories**
 
-<!-- Screenshot: AI file explanation -->
-<!-- Add final screenshot here -->
+![Project page](docs/screenshots/04-project.png)
+
+**Repository overview**: ingestion status, recent jobs, file tree and language statistics (this
+repository analyzing itself)
+
+![Repository overview](docs/screenshots/05-repository.png)
+
+**Code intelligence on one file**: outline, resolved imports, importers and the unused-imports
+diagnostic
+
+![File analysis](docs/screenshots/06-file-analysis.png)
+
+**Code metrics**
+
+![Code metrics](docs/screenshots/07-code-metrics.png)
 
 ## Demo
 
