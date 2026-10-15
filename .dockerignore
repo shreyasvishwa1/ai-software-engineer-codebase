@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.example
+**/.env
+data/
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+backend/.venv/
+backend/.pytest_cache/
+backend/.mypy_cache/
+.ruff_cache/
+frontend/dist/
+frontend/.vite/

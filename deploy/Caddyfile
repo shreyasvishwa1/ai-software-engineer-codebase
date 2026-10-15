@@ -1,0 +1,33 @@
+{
+	admin off
+	servers {
+		# The hosting platform's edge proxy sets X-Forwarded-For; trust it only from private
+		# and shared address ranges so the backend sees each visitor's real IP for rate limits.
+		trusted_proxies static private_ranges 100.64.0.0/10
+	}
+}
+
+:{$PORT:8080} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /health {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# The single-page app: unknown paths fall back to index.html for client-side routes.
+	handle {
+		root * /app/frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+}
