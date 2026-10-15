@@ -46,6 +46,25 @@ class LoginRequest(_Credentials):
     pass
 
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        return normalize_email(value)
+
+
+class PasswordResetConfirm(BaseModel):
+    token: SecretStr
+    # Length is checked in the route, so validation errors never echo the password back.
+    password: SecretStr
+
+
+class MessageResponse(BaseModel):
+    detail: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"

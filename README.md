@@ -48,6 +48,7 @@ guesses.
 | Repository analysis | Code metrics, dependency inventory, secret scan |
 | AI (optional) | Explain one file with Anthropic |
 | Management | Projects and repositories: create, rename, delete (deleting requires typing the name) |
+| Accounts | Register, sign in, and reset a forgotten password through an emailed link (optional, needs SMTP) |
 
 ## Architecture
 
@@ -103,6 +104,17 @@ FastAPI on uvicorn (http://127.0.0.1:8000)
 - **Session**: the frontend keeps the token in `sessionStorage`, so the session ends when the
   tab closes. The token is attached only to the app's own `/api/v1` requests, and any 401
   clears it.
+- **Password reset** (optional, off unless SMTP is configured):
+  - The reset link carries a signed token in the URL fragment, so it never reaches server logs.
+    The page removes it from the address bar as soon as it is read.
+  - Reset tokens use a key derived from `SECRET_KEY` that is separate from sign-in tokens, so
+    neither kind can stand in for the other. They expire after 30 minutes by default.
+  - Each token is bound to a fingerprint of the current password hash, so it works once and
+    stops working when the password changes.
+  - Requests get the same answer whether or not the account exists, and the email is sent
+    after the response. Requests are limited per IP and per email, confirmations per IP.
+  - Without SMTP settings, both endpoints answer 503 "Password reset by email is not
+    available".
 - **Ownership**: every endpoint that addresses a project or repository checks ownership first.
   Another user's project or repository answers 404 ("Project not found", "Repository not
   found"), exactly like a missing one.
@@ -209,8 +221,8 @@ Results at the final development commit:
 
 | Check | Result |
 | --- | --- |
-| Frontend tests (Vitest, Testing Library, jsdom) | 1,204 passing in 36 files |
-| Backend tests (pytest) | 2,552 passing in 40 files; 30 skipped on Windows, where creating symlinks needs a privilege |
+| Frontend tests (Vitest, Testing Library, jsdom) | 1,214 passing in 37 files |
+| Backend tests (pytest) | 2,583 passing in 41 files; 30 skipped on Windows, where creating symlinks needs a privilege |
 | TypeScript typecheck and production build | Passing |
 | `ruff check` and mypy | Passing |
 | Mutation testing | 287/287 mutants caught in the final development phase |
@@ -311,6 +323,12 @@ below exists in the code.
 | `MAX_COMPRESSION_RATIO` | Optional | `100` | Per-entry compression ratio (zip-bomb guard) |
 | `ANTHROPIC_API_KEY` | Optional | empty | Enables AI explanations; empty keeps them disabled |
 | `LLM_MODEL` | Optional | `claude-opus-5-5` | Model for explanations |
+| `SMTP_HOST` | Optional | empty | Mail server for password-reset emails, such as `smtp.gmail.com`; password reset stays off until `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` and `APP_BASE_URL` are all set |
+| `SMTP_PORT` | Optional | `587` | Mail server port; the connection is upgraded with STARTTLS |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | Optional | empty | Mail server login; for Gmail, the address and a Google app password (not the account password) |
+| `SMTP_FROM` | Optional | empty | Sender address of reset emails |
+| `APP_BASE_URL` | Optional | empty | Public origin of the frontend, such as `http://127.0.0.1:5173`; reset links point to `<APP_BASE_URL>/reset-password` |
+| `PASSWORD_RESET_TOKEN_MINUTES` | Optional | `30` | Reset link lifetime (5 to 1,440 minutes) |
 | `DEBUG` | Optional, development only | `false` | Logs SQL statements, including bound parameter values; keep it off outside local development |
 | `APP_NAME`, `APP_VERSION` | Optional | `AI Software Engineer`, `1.0.0` | Shown in the API title and health responses |
 | `API_PREFIX` | Optional | `/api` | API mount prefix; the frontend expects `/api/v1`, so keep the default |
@@ -382,7 +400,7 @@ All endpoints are under `/api/v1`. Repository endpoints share the prefix
 | Area | Endpoints |
 | --- | --- |
 | Health | `GET /health`, `GET /api/health`, `GET /api/v1/health` |
-| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me` |
+| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` |
 | Projects | `GET /projects`, `POST /projects`, `GET`/`PATCH`/`DELETE /projects/{project_id}` |
 | Repositories | `GET`/`POST /projects/{project_id}/repositories`, `GET`/`PATCH`/`DELETE …` |
 | Ingestion and jobs | `POST …/ingest`, `GET …/jobs`, `GET …/jobs/{job_id}`, `POST …/jobs/{job_id}/cancel` |
@@ -404,7 +422,7 @@ All endpoints are under `/api/v1`. Repository endpoints share the prefix
 - **Repositories**: the source cannot be changed after creation. Re-ingest to refresh the
   files, or create a new repository.
 - **Sessions**: there are no refresh tokens. A session ends when the tab closes or the token
-  expires.
+  expires. Resetting a password does not end sessions that are already signed in.
 - **Navigation**: files and lines are not reflected in the URL, so they cannot be shared as
   links.
 - **Tooling**: there is no CI pipeline yet, and ESLint is not installed, so `npm run lint`

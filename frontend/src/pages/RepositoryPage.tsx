@@ -22,7 +22,7 @@ import {
 import { getErrorMessage } from '../services/client'
 import { formatBytes } from '../utils/format'
 
-const CARD = 'rounded-xl border border-slate-800 bg-slate-900 p-4'
+const CARD = 'rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-glow backdrop-blur'
 
 export function RepositoryPage() {
   const { projectId = '', repositoryId = '' } = useParams()
@@ -74,12 +74,12 @@ export function RepositoryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-indigo-600/25 via-fuchsia-600/10 to-cyan-500/15 p-8">
         <Link to={`/projects/${projectId}`} className="text-sm text-indigo-300 hover:underline">
           ← Project
         </Link>
         <div className="mt-2 flex items-center gap-3">
-          <h1 className="text-2xl font-bold">{repo.name}</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">{repo.name}</h1>
           <StatusBadge status={repo.status} />
         </div>
         <p className="mt-1 text-sm text-slate-400">
@@ -107,7 +107,7 @@ export function RepositoryPage() {
 
       <div className="grid gap-6 md:grid-cols-2">
         <section className={CARD} aria-label="Files">
-          <h2 className="mb-3 text-sm font-semibold text-slate-200">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">
             Files
             {tree.data && (
               <span className="ml-2 font-normal text-slate-500">
@@ -128,7 +128,7 @@ export function RepositoryPage() {
           )}
         </section>
         <section className={CARD} aria-label="Languages">
-          <h2 className="mb-3 text-sm font-semibold text-slate-200">Languages</h2>
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">Languages</h2>
           {languages.isPending && <p className="text-sm text-slate-400">Loading languages…</p>}
           {languages.isError && (
             <ErrorMessage
@@ -140,7 +140,7 @@ export function RepositoryPage() {
       </div>
 
       <section className={CARD} aria-label="Search">
-        <h2 className="mb-3 text-sm font-semibold text-slate-200">Search</h2>
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">Search</h2>
         <CodeSearchPanel
           projectId={projectId}
           repositoryId={repositoryId}
@@ -150,7 +150,7 @@ export function RepositoryPage() {
       </section>
 
       <section className={CARD} aria-label="Symbols">
-        <h2 className="mb-3 text-sm font-semibold text-slate-200">Symbols</h2>
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">Symbols</h2>
         <SymbolSearchPanel
           projectId={projectId}
           repositoryId={repositoryId}
@@ -159,7 +159,7 @@ export function RepositoryPage() {
       </section>
 
       <section className={CARD} aria-label="Code metrics">
-        <h2 className="mb-3 text-sm font-semibold text-slate-200">Code metrics</h2>
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">Code metrics</h2>
         <CodeMetricsPanel
           projectId={projectId}
           repositoryId={repositoryId}
@@ -169,7 +169,7 @@ export function RepositoryPage() {
       </section>
 
       <section className={CARD} aria-label="Dependencies">
-        <h2 className="mb-3 text-sm font-semibold text-slate-200">Dependencies</h2>
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">Dependencies</h2>
         <DependenciesPanel
           projectId={projectId}
           repositoryId={repositoryId}
@@ -178,7 +178,7 @@ export function RepositoryPage() {
       </section>
 
       <section className={CARD} aria-label="Secrets">
-        <h2 className="mb-3 text-sm font-semibold text-slate-200">Secrets</h2>
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">Secrets</h2>
         <SecretsPanel
           projectId={projectId}
           repositoryId={repositoryId}
@@ -188,7 +188,7 @@ export function RepositoryPage() {
       </section>
 
       <section className={CARD} aria-label="File" ref={fileCard}>
-        <h2 className="mb-3 text-sm font-semibold text-slate-200">File</h2>
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-200 before:h-4 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-indigo-400 before:to-cyan-400 before:content-['']">File</h2>
         <FileViewer
           projectId={projectId}
           repositoryId={repositoryId}

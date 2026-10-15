@@ -1,6 +1,7 @@
+import hmac
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,16 +13,34 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.config import get_settings
 from app.database import get_db
 from app.models import User
 from app.schemas.auth import (
     MIN_PASSWORD_LENGTH,
     LoginRequest,
+    MessageResponse,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     RegisterRequest,
     TokenResponse,
     UserResponse,
 )
-from app.services.rate_limit import RateLimit, client_ip
+from app.services.password_reset import (
+    InvalidResetToken,
+    create_reset_token,
+    password_fingerprint,
+    read_reset_token,
+    reset_link,
+    send_reset_email,
+)
+from app.services.rate_limit import (
+    RESET_CONFIRM_IP,
+    RESET_REQUEST_EMAIL,
+    RESET_REQUEST_IP,
+    RateLimit,
+    client_ip,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -29,6 +48,10 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 DUPLICATE_ACCOUNT = "An account with this email already exists"
 INVALID_CREDENTIALS = "Invalid email or password"
+RESET_DISABLED = "Password reset by email is not available"
+RESET_REQUESTED = "If an account exists for that email, a reset link is on its way"
+INVALID_RESET_LINK = "This reset link is invalid or has expired; request a new one"
+RESET_DONE = "Your password has been reset; you can now sign in"
 
 
 def _invalid_credentials() -> HTTPException:
@@ -85,6 +108,57 @@ async def login(
             attempt.failed()
             raise _invalid_credentials()
         return TokenResponse(access_token=create_access_token(user.id))
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=MessageResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_password_reset(
+    body: PasswordResetRequest,
+    db: DbSession,
+    request: Request,
+    limiter: RateLimit,
+    background: BackgroundTasks,
+) -> MessageResponse:
+    settings = get_settings()
+    if not settings.password_reset_enabled:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=RESET_DISABLED)
+    await limiter.hit(RESET_REQUEST_IP, client_ip(request))
+    await limiter.hit(RESET_REQUEST_EMAIL, body.email)
+    user = await db.scalar(select(User).where(User.email == body.email))
+    if user is not None:
+        token = create_reset_token(settings, user.id, user.password_hash)
+        # Sent after the response, so known and unknown emails take the same time to answer.
+        background.add_task(send_reset_email, settings, user.email, reset_link(settings, token))
+    return MessageResponse(detail=RESET_REQUESTED)
+
+
+@router.post("/password-reset/confirm", response_model=MessageResponse)
+async def confirm_password_reset(
+    body: PasswordResetConfirm, db: DbSession, request: Request, limiter: RateLimit
+) -> MessageResponse:
+    await limiter.hit(RESET_CONFIRM_IP, client_ip(request))
+    password = body.password.get_secret_value()
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Password must be at least {MIN_PASSWORD_LENGTH} characters long",
+        )
+    invalid = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_RESET_LINK)
+    try:
+        user_id, fingerprint = read_reset_token(get_settings(), body.token.get_secret_value())
+    except InvalidResetToken:
+        raise invalid from None
+    user = await db.get(User, user_id)
+    if user is None or not hmac.compare_digest(
+        fingerprint, password_fingerprint(user.password_hash)
+    ):
+        raise invalid  # unknown user, or the password already changed (link used)
+    user.password_hash = hash_password(password)
+    await db.commit()
+    return MessageResponse(detail=RESET_DONE)
 
 
 @router.get("/me", response_model=UserResponse)

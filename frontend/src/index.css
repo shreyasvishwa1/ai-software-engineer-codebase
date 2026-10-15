@@ -3,4 +3,80 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }
-body { @apply bg-slate-950 text-slate-100 antialiased; }
+
+body {
+  @apply bg-slate-950 text-slate-100 antialiased;
+  background-image:
+    radial-gradient(60rem 40rem at 10% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+    radial-gradient(50rem 35rem at 100% 0%, rgba(168, 85, 247, 0.14), transparent 60%),
+    radial-gradient(40rem 30rem at 50% 110%, rgba(6, 182, 212, 0.10), transparent 60%);
+  background-attachment: fixed;
+}
+
+@layer components {
+  .gradient-text {
+    @apply bg-gradient-to-r from-indigo-300 via-fuchsia-300 to-cyan-300 bg-clip-text text-transparent;
+  }
+  .glass-card {
+    @apply rounded-2xl border border-slate-800/80 bg-slate-900/70 shadow-glow backdrop-blur;
+  }
+}
+
+@layer utilities {
+  /* Primary actions everywhere become a vibrant gradient (the class name stays the same). */
+  .bg-indigo-600 {
+    background-image: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #06b6d4 120%);
+    box-shadow: 0 8px 24px -10px rgba(99, 102, 241, 0.7);
+  }
+  .hover\:bg-indigo-500:hover,
+  .bg-indigo-500 {
+    background-image: linear-gradient(135deg, #818cf8 0%, #a78bfa 55%, #22d3ee 120%);
+  }
+}
+
+/* Inputs: a calm surface with a bright focus ring. */
+input:not([type='checkbox']):not([type='radio']):not([type='file']),
+select,
+textarea {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input:not([type='checkbox']):not([type='radio']):not([type='file']):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25);
+}
+
+button {
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease,
+    transform 0.1s ease;
+}
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+input[type='file']::file-selector-button {
+  margin-right: 0.75rem;
+  border: 1px solid #343c63;
+  border-radius: 0.5rem;
+  background: #1a2142;
+  color: #e0e7ff;
+  padding: 0.35rem 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms, border-color 150ms;
+}
+
+input[type='file']::file-selector-button:hover {
+  border-color: #818cf8;
+  background: #232b4e;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.35);
+}
+
+* {
+  scrollbar-color: #343c63 transparent;
+}

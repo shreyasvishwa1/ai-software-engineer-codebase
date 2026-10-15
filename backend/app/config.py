@@ -82,6 +82,28 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     llm_model: str = "claude-opus-5-5"
 
+    # Password reset by email (SMTP with STARTTLS, e.g. Gmail with an app password). The
+    # feature is enabled only when all of SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM
+    # and APP_BASE_URL are set. APP_BASE_URL is the public site address used in reset links.
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    app_base_url: str | None = None
+    password_reset_token_minutes: int = Field(default=30, ge=5, le=24 * 60)
+
+    @property
+    def password_reset_enabled(self) -> bool:
+        return bool(
+            self.smtp_host
+            and self.smtp_username
+            and self.smtp_password
+            and self.smtp_password.get_secret_value().strip()
+            and self.smtp_from
+            and self.app_base_url
+        )
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -157,6 +179,17 @@ class Settings(BaseSettings):
         if not value.strip():
             raise ValueError("must not be empty")
         return value.strip()
+
+    @field_validator("app_base_url")
+    @classmethod
+    def _validate_app_base_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        value = value.strip().rstrip("/")
+        scheme, sep, rest = value.partition("://")
+        if not sep or scheme not in ("http", "https") or not rest or "/" in rest:
+            raise ValueError("must be scheme://host[:port] with http or https and no path")
+        return value
 
     @field_validator("data_dir")
     @classmethod

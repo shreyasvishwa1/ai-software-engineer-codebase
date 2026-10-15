@@ -50,6 +50,9 @@ class Limit:
 LOGIN_IP = Limit("login-ip", 10, 60)
 LOGIN_EMAIL = Limit("login-email", 5, 15 * 60)
 REGISTER_IP = Limit("register-ip", 5, 60 * 60)
+RESET_REQUEST_IP = Limit("reset-request-ip", 5, 60 * 60)
+RESET_REQUEST_EMAIL = Limit("reset-request-email", 3, 60 * 60)
+RESET_CONFIRM_IP = Limit("reset-confirm-ip", 10, 15 * 60)
 # Upper bound for one login check; a slot left behind by a crashed request expires.
 PENDING_TTL_MS = 60_000
 

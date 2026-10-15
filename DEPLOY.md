@@ -30,6 +30,10 @@ Ingested repositories are stored there.
 | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference to the Redis service) |
 | `SECRET_KEY` | A long random value, for example the output of `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `ANTHROPIC_API_KEY` | Optional; set it only to enable AI file explanations |
+| `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `APP_BASE_URL` | Optional; set all five to enable password reset by email. For Gmail: `smtp.gmail.com`, your address, a Google app password, your address again, and the public URL from step 4 (for example `https://<name>.up.railway.app`) |
+
+Note that Railway's trial plans may block outgoing SMTP connections; if reset emails never
+arrive, check the deployment logs for "Password reset email could not be sent".
 
 The image already sets the following:
 - `ENVIRONMENT=production`, which disables the API docs;
