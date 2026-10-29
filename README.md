@@ -15,7 +15,8 @@ browser:
 - run five static diagnostics;
 - review code metrics, declared dependencies and likely committed secrets.
 
-An optional feature explains a single file through Anthropic's API.
+An optional feature explains a single file through Anthropic's API or Google Gemini (which has a
+free tier).
 
 Every analysis reads the stored files and parses Python with the standard-library `ast` and
 `tokenize` modules. Analyzed code is never executed, imported or compiled to bytecode.
@@ -47,7 +48,7 @@ guesses.
 | Code intelligence | Outline, imports, importers, go to definition, find references, name occurrences, call hierarchy, type hierarchy, method overrides |
 | Static diagnostics | Unused imports, unbound names, unused variables, redefined names, unreachable code |
 | Repository analysis | Code metrics, dependency inventory, secret scan |
-| AI (optional) | Explain one file with Anthropic |
+| AI (optional) | Explain one file with Anthropic or Google Gemini |
 | Management | Projects and repositories: create, rename, delete (deleting requires typing the name) |
 | Accounts | Register, sign in, and reset a forgotten password through an emailed link (optional, needs SMTP) |
 
@@ -65,7 +66,7 @@ FastAPI on uvicorn (http://127.0.0.1:8000)
    │      └──► arq worker: ingestion, code metrics, maintenance (every 5 minutes)
    ├──► DATA_DIR/repositories/<repository_id>/: extracted files, read only through
    │                                            the verified reader
-   └──► Anthropic API (optional): file explanations
+   └──► Anthropic or Gemini API (optional): file explanations
 ```
 
 **An analysis request**
@@ -147,9 +148,11 @@ FastAPI on uvicorn (http://127.0.0.1:8000)
   - CORS accepts exact origins only.
   - `SECRET_KEY` must be at least 32 characters, and the placeholder value is rejected in
     production.
-- **Anthropic boundary**: explanations are off unless `ANTHROPIC_API_KEY` is set.
+- **AI boundary**: explanations are off unless `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` is set.
   - Only the requested, verified file (at most 64 KiB) is sent, always to
-    `https://api.anthropic.com`.
+    `https://api.anthropic.com` or `https://generativelanguage.googleapis.com`.
+  - The Gemini key travels only in a request header, never in the URL, and redirects are
+    not followed.
   - The prompt is fixed on the server and the model gets no tools.
   - Nothing is stored or logged.
 
@@ -208,13 +211,21 @@ link to their lines and are capped at 500 per diagnostic, with exact counts. Fil
 
 ## AI File Explanation
 
-- Optional. Without `ANTHROPIC_API_KEY`, the endpoint answers 503 "AI explanations are not
+- Optional. Without a provider key, the endpoint answers 503 "AI explanations are not
   configured".
-- Sends the verified content of one file (at most 64 KiB) to Anthropic's Messages API, with a
-  fixed server-side prompt and no tools. The model is set by `LLM_MODEL` (default
-  `claude-opus-5-5`).
-- Limited to 20 explanations per user per hour. Review Anthropic's data-retention and privacy
-  terms before enabling it.
+- Two providers:
+  - **Anthropic** (paid): `ANTHROPIC_API_KEY`, model `LLM_MODEL` (default `claude-opus-5-5`),
+    through the Messages API.
+  - **Google Gemini** (free tier available): `GEMINI_API_KEY`, model `GEMINI_MODEL` (default
+    `gemini-3.8-flash`), through `generateContent`. On the free tier, Google may use the content
+    to improve its products, so use it only for code you are willing to share.
+  - `LLM_PROVIDER` (`anthropic` or `gemini`) picks one. When it is unset, Anthropic is used if
+    its key is set, otherwise Gemini.
+- Sends the verified content of one file (at most 64 KiB) with a fixed server-side prompt and
+  no tools. Only a complete answer is shown: blocked, safety-stopped or truncated responses are
+  reported as errors.
+- Limited to 20 explanations per user per hour. Review the provider's data-retention and
+  privacy terms before enabling it.
 
 ## Testing & Quality Engineering
 
@@ -223,7 +234,7 @@ Results at the final development commit:
 | Check | Result |
 | --- | --- |
 | Frontend tests (Vitest, Testing Library, jsdom) | 1,225 passing in 38 files |
-| Backend tests (pytest) | 2,583 passing in 41 files; 30 skipped on Windows, where creating symlinks needs a privilege |
+| Backend tests (pytest) | 2,625 passing in 42 files; 30 skipped on Windows, where creating symlinks needs a privilege |
 | TypeScript typecheck and production build | Passing |
 | `ruff check` and mypy | Passing |
 | Mutation testing | 287/287 mutants caught in the final development phase |
@@ -290,7 +301,7 @@ Diagnostics → Repository Analysis → Optional AI Explanation**
 4. Open a Python file: show its outline, go to a definition in another file, and find
    references.
 5. Run the five diagnostics, then review code metrics, dependencies and the secret scan.
-6. If configured, explain the file with Anthropic.
+6. If configured, explain the file with Anthropic or Gemini.
 
 <!-- Demo video: add the link to the recorded walkthrough here -->
 
@@ -329,8 +340,11 @@ below exists in the code.
 | `MAX_EXTRACTED_SIZE_MB` | Optional | `500` | Total extracted size |
 | `MAX_EXTRACTED_FILE_SIZE_MB` | Optional | `25` | Per-file extracted size (at most `MAX_EXTRACTED_SIZE_MB`) |
 | `MAX_COMPRESSION_RATIO` | Optional | `100` | Per-entry compression ratio (zip-bomb guard) |
-| `ANTHROPIC_API_KEY` | Optional | empty | Enables AI explanations; empty keeps them disabled |
-| `LLM_MODEL` | Optional | `claude-opus-5-5` | Model for explanations |
+| `LLM_PROVIDER` | Optional | empty | `anthropic` or `gemini`; empty chooses by which key is set (Anthropic first) |
+| `ANTHROPIC_API_KEY` | Optional | empty | Enables AI explanations with Anthropic; empty keeps them disabled |
+| `LLM_MODEL` | Optional | `claude-opus-5-5` | Claude model for explanations |
+| `GEMINI_API_KEY` | Optional | empty | Enables AI explanations with Google Gemini (free tier available) |
+| `GEMINI_MODEL` | Optional | `gemini-3.8-flash` | Gemini model for explanations |
 | `SMTP_HOST` | Optional | empty | Mail server for password-reset emails, such as `smtp.gmail.com`; password reset stays off until `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` and `APP_BASE_URL` are all set |
 | `SMTP_PORT` | Optional | `587` | Mail server port; the connection is upgraded with STARTTLS |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | Optional | empty | Mail server login; for Gmail, the address and a Google app password (not the account password) |
@@ -436,8 +450,9 @@ All endpoints are under `/api/v1`. Repository endpoints share the prefix
 - **Tooling**: there is no CI pipeline yet, and ESLint is not installed, so `npm run lint`
   fails.
 - **Bundle size**: the main frontend bundle is about 739 kB, above Vite's 500 kB warning.
-- **Deployment**: production deployment is not the current goal. This is a single-node
-  development setup, and `docker-compose.yml` is for local development only.
+- **Deployment**: single-server only. The root `docker-compose.yml` is for local development;
+  for hosting, see [DEPLOY.md](DEPLOY.md) (Railway) or [DEPLOY-ORACLE.md](DEPLOY-ORACLE.md)
+  (free, on an Oracle Cloud Always Free server).
 
 ## Future Scope
 

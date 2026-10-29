@@ -84,6 +84,14 @@ def enabled(monkeypatch: pytest.MonkeyPatch) -> Settings:
     return settings
 
 
+@pytest.fixture
+def disabled(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    # Independent of backend/.env, which may hold real SMTP settings on a developer machine.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "smtp_host", None)
+    return settings
+
+
 # --- Tokens ----------------------------------------------------------------------------------
 
 
@@ -357,7 +365,7 @@ def _token(link: str) -> str:
 
 @requires_db
 async def test_requests_answer_503_when_email_is_not_configured(
-    client: httpx.AsyncClient, outbox: list[tuple[str, str]]
+    client: httpx.AsyncClient, disabled: Settings, outbox: list[tuple[str, str]]
 ) -> None:
     response = await _request(client, "alice@example.com")
     assert (response.status_code, response.json()) == (

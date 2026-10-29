@@ -78,9 +78,14 @@ class Settings(BaseSettings):
     # Relative paths are resolved against the repository root, not the working directory.
     data_dir: Path = REPO_ROOT / "data"
 
-    # AI file explanations (Claude). Unset or empty disables the feature; never logged.
+    # AI file explanations. Unset or empty keys disable a provider; keys are never logged.
+    # LLM_PROVIDER picks one explicitly; unset means Anthropic when its key is set, otherwise
+    # Gemini when its key is set. LLM_MODEL is the Claude model, GEMINI_MODEL the Gemini one.
+    llm_provider: Literal["anthropic", "gemini"] | None = None
     anthropic_api_key: SecretStr | None = None
     llm_model: str = "claude-opus-5-5"
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-3.8-flash"
 
     # Password reset by email (SMTP with STARTTLS, e.g. Gmail with an app password). The
     # feature is enabled only when all of SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM
@@ -165,10 +170,18 @@ class Settings(BaseSettings):
             raise ValueError("must be redis://[user:password@]host[:port][/db] (or rediss://)")
         return value
 
-    @field_validator("anthropic_api_key")
+    @field_validator("llm_provider", mode="before")
+    @classmethod
+    def _empty_provider_means_auto(cls, value: object) -> object:
+        # LLM_PROVIDER= (empty) means "choose by which key is set".
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("anthropic_api_key", "gemini_api_key")
     @classmethod
     def _empty_api_key_disables(cls, value: SecretStr | None) -> SecretStr | None:
-        # ANTHROPIC_API_KEY= (empty, as in .env.example) means "not configured".
+        # ANTHROPIC_API_KEY= / GEMINI_API_KEY= (empty, as in .env.example) mean "not configured".
         if value is None or not value.get_secret_value().strip():
             return None
         return value
@@ -179,6 +192,16 @@ class Settings(BaseSettings):
         if not value.strip():
             raise ValueError("must not be empty")
         return value.strip()
+
+    @field_validator("gemini_model")
+    @classmethod
+    def _validate_gemini_model(cls, value: str) -> str:
+        # The model is part of the request path, so only plain model ids are accepted.
+        value = value.strip()
+        allowed = all(c.isascii() and (c.isalnum() or c in "-._") for c in value)
+        if not value or not value[0].isalnum() or not allowed:
+            raise ValueError("must be a model id such as gemini-3.8-flash")
+        return value
 
     @field_validator("app_base_url")
     @classmethod

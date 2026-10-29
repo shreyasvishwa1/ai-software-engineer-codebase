@@ -2,7 +2,7 @@ import { useExplainFile } from '../hooks/useExplainFile'
 import { getErrorMessage } from '../services/client'
 import { ErrorMessage } from './ErrorMessage'
 
-export const PRIVACY_NOTICE = "Sends this file's content to Anthropic to generate an explanation."
+export const PRIVACY_NOTICE = "Sends this file's content to the configured AI provider (Anthropic or Google Gemini) to generate an explanation."
 
 interface FileExplanationProps {
   projectId: string

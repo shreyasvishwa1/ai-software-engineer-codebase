@@ -1,0 +1,9 @@
+# Edge server: obtains and renews the HTTPS certificate for SITE_ADDRESS automatically
+# (Let's Encrypt), redirects HTTP to HTTPS, and forwards everything to the app container.
+# Caddy replaces any X-Forwarded-For sent by visitors with their real address, which the
+# app's own Caddy trusts because it comes from the private Compose network.
+{$SITE_ADDRESS} {
+	encode gzip
+	reverse_proxy app:8080
+	header Strict-Transport-Security "max-age=31536000"
+}

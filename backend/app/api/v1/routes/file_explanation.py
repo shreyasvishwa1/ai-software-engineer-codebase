@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.anthropic_provider import get_llm_provider
+from app.ai.selection import get_llm_provider
 from app.ai.provider import LLMProvider
 from app.api.v1.dependencies import get_current_user
 from app.api.v1.routes.repositories import _get_owned_repository

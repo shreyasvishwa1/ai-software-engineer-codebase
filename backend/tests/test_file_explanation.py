@@ -31,7 +31,7 @@ from sqlalchemy.pool import NullPool
 
 import anthropic
 from app.ai import anthropic_provider
-from app.ai.anthropic_provider import get_llm_provider
+from app.ai.selection import get_llm_provider
 from app.ai.provider import ChatMessage, GenerationResult, LLMProvider, LLMProviderError
 from app.config import get_settings
 from app.database import get_db
@@ -240,7 +240,10 @@ async def _explain(
 async def test_not_configured_returns_503_without_reading_the_file(
     client: httpx.AsyncClient, alice: Owner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(get_settings(), "anthropic_api_key", None)  # real dependency: no key
+    # Real dependency with no provider key, independent of backend/.env.
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", None)
+    monkeypatch.setattr(get_settings(), "gemini_api_key", None)
+    monkeypatch.setattr(get_settings(), "llm_provider", None)
     reads: list[str] = []
     real_read = file_explanation.read_file_content
 

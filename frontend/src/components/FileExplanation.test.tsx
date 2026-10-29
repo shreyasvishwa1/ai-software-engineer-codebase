@@ -81,7 +81,7 @@ describe('When the explanation UI is shown', () => {
     const button = await screen.findByRole('button', BUTTON)
     expect(button.textContent).toBe('Explain this file')
     expect(screen.getByText(PRIVACY_NOTICE)).toBeTruthy()
-    expect(PRIVACY_NOTICE).toBe("Sends this file's content to Anthropic to generate an explanation.")
+    expect(PRIVACY_NOTICE).toBe("Sends this file's content to the configured AI provider (Anthropic or Google Gemini) to generate an explanation.")
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(explainPosts(requests)).toHaveLength(0) // no automatic request
   })
