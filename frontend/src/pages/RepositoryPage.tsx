@@ -10,6 +10,7 @@ import { FileViewer, type LineSelection } from '../components/FileViewer'
 import { IngestPanel } from '../components/IngestPanel'
 import { JobProgress } from '../components/JobProgress'
 import { LanguageStats } from '../components/LanguageStats'
+import { RepositoryDashboard } from '../components/RepositoryDashboard'
 import { RepositorySettings } from '../components/RepositorySettings'
 import { SecretsPanel } from '../components/SecretsPanel'
 import { StatusBadge } from '../components/StatusBadge'
@@ -95,6 +96,15 @@ export function RepositoryPage() {
           repository={repo}
         />
       </div>
+
+      <RepositoryDashboard
+        projectId={projectId}
+        repositoryId={repositoryId}
+        repository={repo}
+        tree={tree.data}
+        languages={languages.data}
+        onSelectFile={selectFromPanel}
+      />
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className={CARD}>

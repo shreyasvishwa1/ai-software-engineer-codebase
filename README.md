@@ -42,6 +42,7 @@ guesses.
 | Area | Capabilities |
 | --- | --- |
 | Ingestion | ZIP upload or public GitHub archive; background jobs with status; pending jobs can be cancelled |
+| Dashboard | Per-repository overview: files, lines of code, languages, dependencies and secret findings; a health score from five checks; code distribution, largest files, file sizes, dependencies by ecosystem and job activity |
 | Browsing and search | File tree with a path filter, language statistics, plain-text file viewer, literal code search, exact Python symbol search |
 | Code intelligence | Outline, imports, importers, go to definition, find references, name occurrences, call hierarchy, type hierarchy, method overrides |
 | Static diagnostics | Unused imports, unbound names, unused variables, redefined names, unreachable code |
@@ -221,7 +222,7 @@ Results at the final development commit:
 
 | Check | Result |
 | --- | --- |
-| Frontend tests (Vitest, Testing Library, jsdom) | 1,214 passing in 37 files |
+| Frontend tests (Vitest, Testing Library, jsdom) | 1,225 passing in 38 files |
 | Backend tests (pytest) | 2,583 passing in 41 files; 30 skipped on Windows, where creating symlinks needs a privilege |
 | TypeScript typecheck and production build | Passing |
 | `ruff check` and mypy | Passing |
@@ -262,10 +263,10 @@ Results at the final development commit:
 
 ![Project page](docs/screenshots/04-project.png)
 
-**Repository overview**: ingestion status, recent jobs, file tree and language statistics (this
-repository analyzing itself)
+**Repository dashboard**: headline numbers, a health score from five checks, code distribution,
+largest files, file sizes, dependencies and job activity (this repository analyzing itself)
 
-![Repository overview](docs/screenshots/05-repository.png)
+![Repository dashboard](docs/screenshots/05-repository.png)
 
 **Code intelligence on one file**: outline, resolved imports, importers and the unused-imports
 diagnostic
