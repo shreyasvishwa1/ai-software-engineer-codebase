@@ -45,7 +45,7 @@ describe('sign in', () => {
     })
     renderWithProviders(<App />, { route: '/login' })
     fill(/email/i, 'alice@example.com')
-    fill(/password/i, PASSWORD)
+    fill(/^password/i, PASSWORD)
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy()
@@ -67,12 +67,12 @@ describe('sign in', () => {
     })
     renderWithProviders(<App />, { route: '/login' })
     fill(/email/i, 'alice@example.com')
-    fill(/password/i, PASSWORD)
+    fill(/^password/i, PASSWORD)
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
     expect((await screen.findByRole('alert')).textContent).toBe('Invalid email or password')
     expect(getToken()).toBeNull()
-    expect((screen.getByLabelText(/password/i) as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText(/^password/i) as HTMLInputElement).value).toBe('')
     expect(document.body.textContent).not.toContain(PASSWORD)
   })
 })
@@ -86,7 +86,7 @@ describe('registration', () => {
     })
     renderWithProviders(<App />, { route: '/register' })
     fill(/email/i, 'alice@example.com')
-    fill(/password/i, PASSWORD)
+    fill(/^password/i, PASSWORD)
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
 
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy()
@@ -107,7 +107,7 @@ describe('registration', () => {
     })
     renderWithProviders(<App />, { route: '/register' })
     fill(/email/i, 'alice@example.com')
-    fill(/password/i, PASSWORD)
+    fill(/^password/i, PASSWORD)
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
     expect((await screen.findByRole('alert')).textContent).toBe(
       'An account with this email already exists',
@@ -119,7 +119,7 @@ describe('registration', () => {
     const requests = mockApi({})
     renderWithProviders(<App />, { route: '/register' })
     fill(/email/i, 'alice@example.com')
-    fill(/password/i, 'short')
+    fill(/^password/i, 'short')
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
     expect((await screen.findByRole('alert')).textContent).toContain('at least 8 characters')
     expect(requests).toHaveLength(0)

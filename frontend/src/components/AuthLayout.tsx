@@ -1,5 +1,5 @@
-import { Bug, Code2, GitBranch, ShieldCheck } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Bug, Code2, Eye, EyeOff, GitBranch, ShieldCheck } from 'lucide-react'
+import { useId, useState, type ReactNode } from 'react'
 
 const HIGHLIGHTS = [
   { icon: GitBranch, title: 'Import any repository', text: 'ZIP uploads or public GitHub archives, ingested safely.' },
@@ -72,3 +72,56 @@ export const AUTH_INPUT =
   'mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3.5 py-2.5 text-slate-100 placeholder:text-slate-500'
 export const AUTH_BUTTON =
   'w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50'
+
+/**
+ * A password input with an eye button that shows or hides what was typed. The button sits
+ * outside the <label>, so the input's accessible name stays exactly the label text; it is a
+ * plain type="button" (never submits) and reports its state with aria-pressed.
+ */
+export function PasswordField({
+  label,
+  value,
+  onChange,
+  autoComplete,
+}: {
+  label: ReactNode
+  value: string
+  onChange: (value: string) => void
+  autoComplete: 'current-password' | 'new-password'
+}) {
+  const id = useId()
+  const [visible, setVisible] = useState(false)
+  const Icon = visible ? EyeOff : Eye
+  return (
+    <div className="block text-sm">
+      <label htmlFor={id} className="font-medium text-slate-300">
+        {label}
+      </label>
+      <div className="relative mt-1.5">
+        <input
+          id={id}
+          type={visible ? 'text' : 'password'}
+          autoComplete={autoComplete}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          required
+          className={`${AUTH_INPUT.replace('mt-1.5 ', '')} pr-11`}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          onClick={() => setVisible((shown) => !shown)}
+          aria-label={visible ? 'Hide password' : 'Show password'}
+          aria-pressed={visible}
+          aria-controls={id}
+          title={visible ? 'Hide password' : 'Show password'}
+          className="absolute inset-y-0 right-0 flex items-center rounded-r-xl px-3 text-slate-400 hover:text-slate-100 focus-visible:text-slate-100"
+        >
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  )
+}

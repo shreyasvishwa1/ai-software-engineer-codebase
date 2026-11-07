@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
-import { AUTH_BUTTON, AUTH_INPUT, AuthLayout } from '../components/AuthLayout'
+import { AUTH_BUTTON, AUTH_INPUT, AuthLayout, PasswordField } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { useAuth } from '../hooks/useAuth'
 import { getErrorMessage } from '../services/client'
@@ -54,17 +54,12 @@ export function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
-        <label className="block text-sm">
-          <span className="font-medium text-slate-300">Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            className={AUTH_INPUT}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+        <PasswordField
+          label="Password"
+          autoComplete="current-password"
+          value={password}
+          onChange={setPassword}
+        />
         <div className="flex justify-end">
           <Link to="/forgot-password" className="text-sm font-medium text-indigo-300 hover:text-indigo-200 hover:underline">
             Forgot your password?

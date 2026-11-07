@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 
-import { AUTH_BUTTON, AUTH_INPUT, AuthLayout } from '../components/AuthLayout'
+import { AUTH_BUTTON, AUTH_INPUT, AuthLayout, PasswordField } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { useAuth } from '../hooks/useAuth'
 import { getErrorMessage } from '../services/client'
@@ -58,17 +58,12 @@ export function RegisterPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
-        <label className="block text-sm">
-          <span className="font-medium text-slate-300">Password (at least {MIN_PASSWORD_LENGTH} characters)</span>
-          <input
-            type="password"
-            autoComplete="new-password"
-            required
-            className={AUTH_INPUT}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+        <PasswordField
+          label={`Password (at least ${MIN_PASSWORD_LENGTH} characters)`}
+          autoComplete="new-password"
+          value={password}
+          onChange={setPassword}
+        />
         <ErrorMessage message={error} />
         <button type="submit" disabled={submitting} className={AUTH_BUTTON}>
           {submitting ? 'Creating account…' : 'Create account'}

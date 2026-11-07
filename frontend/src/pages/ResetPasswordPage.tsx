@@ -2,7 +2,7 @@ import { CheckCircle2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
-import { AUTH_BUTTON, AUTH_INPUT, AuthLayout } from '../components/AuthLayout'
+import { AUTH_BUTTON, AuthLayout, PasswordField } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { confirmPasswordReset } from '../services/auth'
 import { getErrorMessage } from '../services/client'
@@ -72,28 +72,18 @@ export function ResetPasswordPage() {
         </div>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4" aria-label="Choose a new password">
-          <label className="block text-sm">
-            <span className="font-medium text-slate-300">New password</span>
-            <input
-              type="password"
-              autoComplete="new-password"
-              required
-              className={AUTH_INPUT}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="font-medium text-slate-300">Confirm new password</span>
-            <input
-              type="password"
-              autoComplete="new-password"
-              required
-              className={AUTH_INPUT}
-              value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
-            />
-          </label>
+          <PasswordField
+            label="New password"
+            autoComplete="new-password"
+            value={password}
+            onChange={setPassword}
+          />
+          <PasswordField
+            label="Confirm new password"
+            autoComplete="new-password"
+            value={confirmation}
+            onChange={setConfirmation}
+          />
           <ErrorMessage message={error} />
           <button type="submit" disabled={submitting} className={AUTH_BUTTON}>
             {submitting ? 'Saving…' : 'Reset password'}
