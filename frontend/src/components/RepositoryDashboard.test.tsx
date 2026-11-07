@@ -150,7 +150,7 @@ describe('RepositoryDashboard', () => {
       }),
     )
     const dashboard = render(undefined, { ...REPO, status: 'failed' })
-    await waitFor(() => expect(tile(dashboard, 'Secret findings').textContent).toBe('Secret findings3Review them in Secrets below'))
+    await waitFor(() => expect(tile(dashboard, 'Secret findings').textContent).toBe('Secret findings3See Secrets below'))
     expect(health().textContent).toContain('1 of 5 checks passing')
     expect(health().textContent).toContain('20%')
     expect(health().textContent).toContain('At risk')
@@ -209,11 +209,11 @@ describe('RepositoryDashboard', () => {
     mockApi(routes())
     render()
     const sizes = screen.getByRole('region', { name: 'File size distribution' })
-    await waitFor(() => expect(sizes.textContent).toContain('Under 100 lines1 files'))
+    await waitFor(() => expect(sizes.textContent).toContain('Under 100 lines1 file'))
     expect(within(sizes).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'Under 100 lines1 files',
+      'Under 100 lines1 file',
       '100–499 lines0 files',
-      '500–999 lines1 files',
+      '500–999 lines1 file',
       '1,000+ lines2 files',
     ])
     const deps = screen.getByRole('region', { name: 'Dependencies by ecosystem' })

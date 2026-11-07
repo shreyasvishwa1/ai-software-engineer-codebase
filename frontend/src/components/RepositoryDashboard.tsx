@@ -399,7 +399,7 @@ function SizeDistributionPanel({ files, analyzed }: { files: FileMetric[]; analy
             <li key={bucket.label}>
               <span className="flex items-baseline justify-between text-sm">
                 <span className="text-slate-300">{bucket.label}</span>
-                <span className="tabular-nums text-slate-400">{number(bucket.count)} files</span>
+                <span className="tabular-nums text-slate-400">{number(bucket.count)} {bucket.count === 1 ? 'file' : 'files'}</span>
               </span>
               <span className="mt-1 block h-2 rounded-full bg-slate-800">
                 <span
@@ -615,7 +615,7 @@ export function RepositoryDashboard({
               ? waiting(scan, 'Scanning…')
               : findings === 0
                 ? 'None found'
-                : 'Review them in Secrets below'
+                : 'See Secrets below'
           }
         />
       </div>
